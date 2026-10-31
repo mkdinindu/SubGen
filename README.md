@@ -141,13 +141,6 @@ python gui.py
 
 Select a video, adjust the Whisper and timing settings, optionally enable translation, and click **Generate Subtitles**. The pipeline output is streamed to the log panel.
 
-### Google Colab (GPU)
-
-1. Open `subgen_colab.ipynb` in [Google Colab](https://colab.research.google.com/).
-2. Set the runtime to **GPU** (`Runtime → Change runtime type → T4 GPU`).
-3. Run the cells in order: install dependencies, upload a video, configure settings, run the pipeline, and download the resulting `.srt`.
-
-The notebook uses `faster-whisper` with CUDA and `float16` compute for much faster transcription than the CPU CLI.
 
 ### Standalone translation
 
