@@ -100,7 +100,8 @@ This writes `movie.srt` next to the video.
 | `--delay` | `0.0` | Offset all timestamps in seconds (negative = earlier) |
 | `--min-duration` | `1.0` | Minimum subtitle duration in seconds |
 | `--max-duration` | `6.0` | Maximum subtitle duration in seconds |
-| `--chars-per-line` | `42` | Maximum characters per subtitle line |
+| `--chars-per-line` | `42` | Maximum characters per subtitle line (line breaks are inserted in the SRT) |
+| `--max-lines` | `2` | Maximum number of lines per subtitle |
 | `--translate` | off | Enable translation via Ollama |
 | `--source-lang` | `English` | Source language name |
 | `--source-code` | `en` | Source language code |
@@ -134,7 +135,7 @@ python subgen.py interview.mp4 --language ru --translate \
 Tighter subtitles for social media:
 
 ```bash
-python subgen.py clip.mp4 --chars-per-line 32 --max-duration 4 --min-duration 1.2
+python subgen.py clip.mp4 --chars-per-line 32 --max-lines 2 --max-duration 4 --min-duration 1.2
 ```
 
 ### Desktop GUI
@@ -159,7 +160,7 @@ python translate.py "Hello, world!" --target-lang Spanish --target-code es --mod
 1. **Probe duration** — `ffprobe` reads the video length for the progress bar.
 2. **Extract audio** — `ffmpeg` converts the audio to 16 kHz mono WAV.
 3. **Transcribe** — Whisper transcribes with `word_timestamps=True`.
-4. **Chunk** — words are grouped into subtitles while respecting `chars-per-line`, `max-duration`, `min-duration`, and a maximum of two lines.
+4. **Chunk** — words are grouped into subtitles while respecting `chars-per-line`, `max-lines`, `max-duration`, and `min-duration`. Real line breaks are inserted at word boundaries so each line stays within `chars-per-line`; punctuation stays attached to its word.
 5. **Offset** — the optional `--delay` is applied to every timestamp.
 6. **Translate (optional)** — each chunk is sent to Ollama with a translation prompt, one request per subtitle.
 7. **Write SRT** — entries are written in standard `HH:MM:SS,mmm --> HH:MM:SS,mmm` format.

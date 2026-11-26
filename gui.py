@@ -79,6 +79,7 @@ class SubGenGUI:
         self.min_dur_var = tk.StringVar(value="1.0")
         self.max_dur_var = tk.StringVar(value="6.0")
         self.chars_var = tk.StringVar(value="42")
+        self.max_lines_var = tk.StringVar(value="2")
 
         ttk.Label(timing_frame, text="Delay (s):").grid(row=0, column=0, sticky=tk.W, padx=(0, 4))
         ttk.Entry(timing_frame, textvariable=self.delay_var, width=8).grid(row=0, column=1, sticky=tk.W)
@@ -88,6 +89,8 @@ class SubGenGUI:
         ttk.Entry(timing_frame, textvariable=self.max_dur_var, width=8).grid(row=1, column=1, sticky=tk.W, pady=(6, 0))
         ttk.Label(timing_frame, text="Chars/Line:").grid(row=1, column=2, sticky=tk.W, padx=(12, 4), pady=(6, 0))
         ttk.Entry(timing_frame, textvariable=self.chars_var, width=8).grid(row=1, column=3, sticky=tk.W, pady=(6, 0))
+        ttk.Label(timing_frame, text="Max Lines:").grid(row=2, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
+        ttk.Entry(timing_frame, textvariable=self.max_lines_var, width=8).grid(row=2, column=1, sticky=tk.W, pady=(6, 0))
 
         # ── Translation ──
         self.translate_var = tk.BooleanVar(value=False)
@@ -213,6 +216,7 @@ class SubGenGUI:
         args += ["--min-duration", self.min_dur_var.get().strip() or "1.0"]
         args += ["--max-duration", self.max_dur_var.get().strip() or "6.0"]
         args += ["--chars-per-line", self.chars_var.get().strip() or "42"]
+        args += ["--max-lines", self.max_lines_var.get().strip() or "2"]
 
         if self.translate_var.get():
             args += ["--translate"]
