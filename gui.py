@@ -3,7 +3,6 @@
 
 import os
 import re
-import shutil
 import subprocess
 import sys
 import threading
@@ -97,16 +96,21 @@ class SubGenGUI:
         self.trans_frame = ttk.LabelFrame(main, text="Translation (Ollama)", padding=8)
         self.trans_frame.grid(row=4, column=0, sticky=tk.EW, pady=(0, 8))
         self.trans_frame.columnconfigure(1, weight=1)
+        self.trans_frame.columnconfigure(4, weight=1)
 
         ttk.Checkbutton(self.trans_frame, text="Enable Translation",
                         variable=self.translate_var,
-                        command=self.toggle_translate).grid(row=0, column=0, columnspan=5, sticky=tk.W)
+                        command=self.toggle_translate).grid(row=0, column=0, columnspan=6, sticky=tk.W)
 
         self.src_lang_var = tk.StringVar(value="English")
         self.src_code_var = tk.StringVar(value="en")
         self.tgt_lang_var = tk.StringVar(value="Spanish")
         self.tgt_code_var = tk.StringVar(value="es")
         self.ollama_var = tk.StringVar(value="translategemma:4b")
+        self.ollama_url_var = tk.StringVar(value="")
+        self.batch_size_var = tk.StringVar(value="20")
+        self.timeout_var = tk.StringVar(value="300")
+        self.retries_var = tk.StringVar(value="3")
 
         ttk.Label(self.trans_frame, text="Source:").grid(row=1, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
         ttk.Entry(self.trans_frame, textvariable=self.src_lang_var, width=14).grid(
@@ -127,6 +131,21 @@ class SubGenGUI:
         ttk.Label(self.trans_frame, text="Ollama Model:").grid(row=1, column=3, sticky=tk.W, padx=(12, 4), pady=(6, 0))
         ttk.Entry(self.trans_frame, textvariable=self.ollama_var, width=12).grid(
             row=1, column=4, sticky=tk.W, pady=(6, 0))
+
+        ttk.Label(self.trans_frame, text="Timeout (s):").grid(row=2, column=3, sticky=tk.W, padx=(12, 4), pady=(6, 0))
+        ttk.Entry(self.trans_frame, textvariable=self.timeout_var, width=8).grid(
+            row=2, column=4, sticky=tk.W, pady=(6, 0))
+
+        ttk.Label(self.trans_frame, text="Batch Size:").grid(row=3, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
+        ttk.Entry(self.trans_frame, textvariable=self.batch_size_var, width=8).grid(
+            row=3, column=1, sticky=tk.W, pady=(6, 0))
+        ttk.Label(self.trans_frame, text="Retries:").grid(row=3, column=2, sticky=tk.W, padx=(12, 4), pady=(6, 0))
+        ttk.Entry(self.trans_frame, textvariable=self.retries_var, width=8).grid(
+            row=3, column=3, sticky=tk.W, pady=(6, 0))
+
+        ttk.Label(self.trans_frame, text="Server URL:").grid(row=4, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
+        ttk.Entry(self.trans_frame, textvariable=self.ollama_url_var).grid(
+            row=4, column=1, columnspan=5, sticky=tk.EW, pady=(6, 0))
 
         self.toggle_translate()
 
@@ -225,6 +244,12 @@ class SubGenGUI:
             args += ["--target-lang", self.tgt_lang_var.get().strip()]
             args += ["--target-code", self.tgt_code_var.get().strip()]
             args += ["--ollama-model", self.ollama_var.get().strip()]
+            url = self.ollama_url_var.get().strip()
+            if url:
+                args += ["--ollama-url", url]
+            args += ["--batch-size", self.batch_size_var.get().strip() or "20"]
+            args += ["--ollama-timeout", self.timeout_var.get().strip() or "300"]
+            args += ["--ollama-retries", self.retries_var.get().strip() or "3"]
 
         return args
 
@@ -270,10 +295,6 @@ class SubGenGUI:
             return
         if not os.path.isfile(video):
             messagebox.showerror("Error", f"File not found:\n{video}")
-            return
-
-        if self.translate_var.get() and not shutil.which("ollama"):
-            messagebox.showerror("Error", "ollama not found.\nInstall from https://ollama.com")
             return
 
         self.run_btn.configure(state=tk.DISABLED)

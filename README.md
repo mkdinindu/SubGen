@@ -28,6 +28,7 @@ SubGen extracts the audio, transcribes it with word-level timestamps, splits the
 | `subgen.py` | CLI pipeline: audio extraction → transcription → chunking → SRT output |
 | `gui.py` | Tkinter desktop frontend that runs `subgen.py` |
 | `translate.py` | Standalone helper to translate text with Ollama |
+| `ollama_client.py` | Shared batched Ollama HTTP translation client (JSON output, retries, timeouts) |
 | `subgen_colab.ipynb` | Google Colab notebook (GPU, `faster-whisper`) |
 | `rus.srt` | Example generated subtitle file |
 | `SubGEn.zip` | Packaged copy of the Python sources |
@@ -38,7 +39,7 @@ SubGen extracts the audio, transcribes it with word-level timestamps, splits the
 - [`ffmpeg`](https://ffmpeg.org/) (includes `ffprobe`)
 - [`openai-whisper`](https://pypi.org/project/openai-whisper/)
 - `tqdm` (optional, enables progress bars)
-- [Ollama](https://ollama.com) (optional, only for translation)
+- [Ollama](https://ollama.com) with the server running (optional, only for translation) — SubGen calls its HTTP API directly, so the `ollama` CLI binary is not needed at runtime
 
 A GPU is recommended but not required for the CLI; Whisper will fall back to CPU (slower).
 
@@ -68,10 +69,14 @@ pip install openai-whisper tqdm
 
 ### 3. (Optional) Set up Ollama for translation
 
+Install Ollama from https://ollama.com, start its server, and pull a translation model:
+
 ```bash
-# Install from https://ollama.com, then:
-ollama pull gemma
+ollama serve            # or start the Ollama desktop app
+ollama pull gemma       # use the same name you pass to --ollama-model
 ```
+
+SubGen connects to `http://127.0.0.1:11434` by default. Set `OLLAMA_HOST` (or pass `--ollama-url`) to use a different server.
 
 ## Usage
 
@@ -108,6 +113,10 @@ This writes `movie.srt` next to the video.
 | `--target-lang` | `Spanish` | Target language name |
 | `--target-code` | `es` | Target language code |
 | `--ollama-model` | `gemma` | Ollama model used for translation |
+| `--ollama-url` | `OLLAMA_HOST` or `http://127.0.0.1:11434` | Ollama HTTP server URL |
+| `--ollama-timeout` | `300` | Seconds to wait for each Ollama request |
+| `--ollama-retries` | `3` | Retries for transient request/JSON failures |
+| `--batch-size` | `20` | Subtitle cues sent in each Ollama request |
 
 #### Examples
 
@@ -132,6 +141,13 @@ python subgen.py interview.mp4 --language ru --translate \
   --ollama-model gemma
 ```
 
+Translate through a remote Ollama server with fewer, larger batches:
+
+```bash
+python subgen.py movie.mp4 --translate --target-lang French --target-code fr \
+  --ollama-url http://192.168.1.10:11434 --batch-size 40 --ollama-timeout 600
+```
+
 Tighter subtitles for social media:
 
 ```bash
@@ -144,7 +160,7 @@ python subgen.py clip.mp4 --chars-per-line 32 --max-duration 4 --min-duration 1.
 python gui.py
 ```
 
-Select a video, adjust the Whisper and timing settings, optionally enable translation, and click **Generate Subtitles**. The pipeline output is streamed to the log panel.
+Select a video, adjust the Whisper and timing settings, optionally enable translation (including Ollama server URL, batch size, timeout, and retries), and click **Generate Subtitles**. The pipeline output is streamed to the log panel.
 
 
 ### Standalone translation
@@ -162,7 +178,7 @@ python translate.py "Hello, world!" --target-lang Spanish --target-code es --mod
 3. **Transcribe** — Whisper transcribes with `word_timestamps=True`.
 4. **Chunk** — words are grouped into subtitles while respecting `chars-per-line`, `max-duration`, `min-duration`, and a maximum of two lines.
 5. **Offset** — the optional `--delay` is applied to every timestamp.
-6. **Translate (optional)** — each chunk is sent to Ollama with a translation prompt, one request per subtitle.
+6. **Translate (optional)** — cues are grouped into batches (default: 20) and sent to Ollama's `/api/chat` endpoint. One shared system prompt and a strict JSON response keep translations aligned, with retries and timeouts on every request.
 7. **Write SRT** — entries are written in standard `HH:MM:SS,mmm --> HH:MM:SS,mmm` format.
 
 ## Troubleshooting
@@ -171,8 +187,10 @@ python translate.py "Hello, world!" --target-lang Spanish --target-code es --mod
 | --- | --- |
 | `ffmpeg not found` | Install ffmpeg and ensure it is on your `PATH`. |
 | `openai-whisper not installed` | `pip install openai-whisper` in the active environment. |
-| `ollama not found` | Install Ollama from <https://ollama.com> or disable translation. |
-| Translation is slow | Each subtitle is a separate model call. Use a smaller model or a more powerful machine/GPU. |
+| Cannot connect to Ollama | Start the Ollama server (`ollama serve`) and check `--ollama-url` / `OLLAMA_HOST`. |
+| Translation times out | Increase `--ollama-timeout`; if the model returns malformed/incomplete JSON, increase `--ollama-retries`. |
+| Translation is slow | Increase `--batch-size` to reduce request count, or use a smaller model/more powerful machine. |
+| Wrong number of translations | Lower `--batch-size`; very large batches can cause models to drop cues. |
 | Out of memory | Use a smaller Whisper model (`tiny` or `base`). |
 | Subtitles out of sync | Adjust `--delay` (positive = later, negative = earlier). |
 | No word timestamps | Some models/languages produce poor word timing; try a larger model. |
@@ -180,6 +198,7 @@ python translate.py "Hello, world!" --target-lang Spanish --target-code es --mod
 ## Notes and limitations
 
 - Translation quality depends entirely on the selected Ollama model and prompt.
-- Translations are performed one subtitle chunk at a time, so context across lines is limited.
+- Translation context is limited to cues in the same batch; increase `--batch-size` for more context at the cost of larger requests.
+- Translation requires the Ollama HTTP server to be reachable; the `ollama` CLI binary is not invoked.
 - The CLI and GUI use `openai-whisper`; the Colab notebook uses `faster-whisper`, which requires separate installation.
 - Very long videos can take a significant amount of time to transcribe on CPU.

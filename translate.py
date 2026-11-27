@@ -1,39 +1,31 @@
 #!/usr/bin/env python3
-"""Translate text using Ollama. Spins up the model if needed."""
+"""Translate a single string with Ollama through its HTTP API."""
 
 import argparse
-import shutil
-import subprocess
 import sys
-import time
+
+from ollama_client import (
+    DEFAULT_RETRIES,
+    DEFAULT_TIMEOUT,
+    OllamaError,
+    translate_batch,
+)
 
 
 def translate(text, source_lang, source_code, target_lang, target_code,
-              model="gemma"):
-    prompt = (
-        f"You are a professional {source_lang} ({source_code}) to {target_lang} ({target_code}) translator. "
-        f"Your goal is to accurately convey the meaning and nuances of the original {source_lang} text "
-        f"while adhering to {target_lang} grammar, vocabulary, and cultural sensitivities.\n"
-        f"Produce only the {target_lang} translation, without any additional explanations or commentary. "
-        f"Please translate the following {source_lang} text into {target_lang}:\n\n"
-        f"{text}"
-    )
-
-    proc = subprocess.run(
-        ["ollama", "run", model, prompt],
-        capture_output=True,
-        text=True,
-        timeout=300
-    )
-
-    if proc.returncode != 0:
-        raise RuntimeError(f"ollama failed: {proc.stderr.strip()}")
-
-    output = proc.stdout.strip()
-    # Remove the prompt echo if ollama repeats it
-    if prompt[:80] in output:
-        output = output.replace(prompt, "", 1).strip()
-    return output
+              model="gemma", base_url=None, timeout=DEFAULT_TIMEOUT,
+              retries=DEFAULT_RETRIES):
+    return translate_batch(
+        [text],
+        source_lang=source_lang,
+        source_code=source_code,
+        target_lang=target_lang,
+        target_code=target_code,
+        model=model,
+        base_url=base_url,
+        timeout=timeout,
+        retries=retries,
+    )[0]
 
 
 def main():
@@ -44,24 +36,29 @@ def main():
     parser.add_argument("--target-lang", default="Spanish", help="Target language name")
     parser.add_argument("--target-code", default="es", help="Target language code")
     parser.add_argument("--model", default="gemma", help="Ollama model name")
+    parser.add_argument("--url", default=None,
+                        help="Ollama server URL (default: OLLAMA_HOST or http://127.0.0.1:11434)")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
+                        help="Request timeout in seconds (default: 300)")
+    parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES,
+                        help="Retries for failed requests (default: 3)")
 
     args = parser.parse_args()
 
-    if not shutil.which("ollama"):
-        print("Error: ollama not found. Install from https://ollama.com", file=sys.stderr)
-        sys.exit(1)
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
+    if args.retries < 0:
+        parser.error("--retries cannot be negative")
 
     try:
         result = translate(
             args.text, args.source_lang, args.source_code,
-            args.target_lang, args.target_code, args.model
+            args.target_lang, args.target_code, args.model,
+            base_url=args.url, timeout=args.timeout, retries=args.retries,
         )
         print(result)
-    except subprocess.TimeoutExpired:
-        print("Error: Translation timed out (5 min).", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+    except OllamaError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
