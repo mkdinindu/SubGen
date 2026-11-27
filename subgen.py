@@ -80,16 +80,12 @@ def transcribe(audio_path, model_name="base", language=None):
     return result
 
 
+_STANDALONE_PUNCTUATION = re.compile(r"[,.;:!?…]+")
+
+
 def build_subtitle_chunks(segments, chars_per_line=42, max_lines=2,
                           min_duration=1.0, max_duration=6.0, min_gap=0.0):
-    words = []
-    for seg in segments:
-        for word in seg.get("words", []):
-            words.append({
-                "text": word["word"].strip(),
-                "start": word["start"],
-                "end": word["end"]
-            })
+    words = _collect_words(segments)
 
     if not words:
         return []
@@ -102,11 +98,12 @@ def build_subtitle_chunks(segments, chars_per_line=42, max_lines=2,
         candidate = current_chunk + [w]
         candidate_text = " ".join(wd["text"] for wd in candidate)
         candidate_duration = w["end"] - chunk_start
-        lines = _count_lines(candidate_text, chars_per_line)
+        candidate_lines = len(_wrap_lines(candidate_text, chars_per_line))
 
-        if (lines > max_lines or candidate_duration > max_duration) and current_chunk:
+        if (candidate_lines > max_lines or candidate_duration > max_duration) and current_chunk:
             chunk_end = current_chunk[-1]["end"]
-            text = " ".join(wd["text"] for wd in current_chunk)
+            text = _wrap_text(" ".join(wd["text"] for wd in current_chunk),
+                              chars_per_line)
             chunks.append({"start": chunk_start, "end": chunk_end, "text": text})
             current_chunk = [w]
             chunk_start = w["start"]
@@ -115,7 +112,8 @@ def build_subtitle_chunks(segments, chars_per_line=42, max_lines=2,
 
     if current_chunk:
         chunk_end = current_chunk[-1]["end"]
-        text = " ".join(wd["text"] for wd in current_chunk)
+        text = _wrap_text(" ".join(wd["text"] for wd in current_chunk),
+                          chars_per_line)
         chunks.append({"start": chunk_start, "end": chunk_end, "text": text})
 
     min_gap = max(0.0, min_gap)
@@ -142,19 +140,54 @@ def build_subtitle_chunks(segments, chars_per_line=42, max_lines=2,
     return chunks
 
 
-def _count_lines(text, max_chars):
-    if len(text) <= max_chars:
-        return 1
+def _collect_words(segments):
+    """Flatten Whisper words, attaching standalone punctuation to the preceding word."""
+    merged = []
+    for seg in segments:
+        for word in seg.get("words", []):
+            text = word["word"].strip()
+            if not text:
+                continue
+            entry = {"text": text, "start": word["start"], "end": word["end"]}
+            if merged and _STANDALONE_PUNCTUATION.fullmatch(text):
+                merged[-1]["text"] += text
+                merged[-1]["end"] = entry["end"]
+            else:
+                merged.append(entry)
+    return merged
+
+
+def _wrap_lines(text, max_chars):
+    """Greedily wrap text on word boundaries so no line exceeds max_chars."""
     words = text.split()
-    lines = 1
-    current = 0
-    for w in words:
-        if current + len(w) + (1 if current > 0 else 0) > max_chars:
-            lines += 1
-            current = len(w)
+    if not words:
+        return []
+
+    lines = []
+    current = []
+    current_len = 0
+    for word in words:
+        extra = len(word) + (1 if current else 0)
+        if current and current_len + extra > max_chars:
+            lines.append(" ".join(current))
+            current = [word]
+            current_len = len(word)
         else:
-            current += len(w) + (1 if current > 0 else 0)
+            current.append(word)
+            current_len += extra
+
+    if current:
+        lines.append(" ".join(current))
     return lines
+
+
+def _wrap_text(text, max_chars):
+    """Return text with real newlines inserted at max_chars boundaries."""
+    return "\n".join(_wrap_lines(text, max_chars))
+
+
+def _count_lines(text, max_chars):
+    return max(1, len(_wrap_lines(text, max_chars)))
 
 
 def translate_text(text, source_lang, source_code, target_lang, target_code,
@@ -227,8 +260,15 @@ def main():
                         help="Minimum gap between subtitles in seconds (default: 0.0)")
     parser.add_argument("--chars-per-line", type=int, default=42,
                         help="Max characters per line (default: 42)")
+    parser.add_argument("--max-lines", type=int, default=2,
+                        help="Maximum lines per subtitle (default: 2)")
 
     args = parser.parse_args()
+
+    if args.chars_per_line < 1:
+        parser.error("--chars-per-line must be at least 1")
+    if args.max_lines < 1:
+        parser.error("--max-lines must be at least 1")
 
     if not os.path.isfile(args.video):
         print(f"Error: file '{args.video}' not found", file=sys.stderr)
@@ -254,6 +294,7 @@ def main():
         chunks = build_subtitle_chunks(
             result["segments"],
             chars_per_line=args.chars_per_line,
+            max_lines=args.max_lines,
             max_duration=args.max_duration,
             min_duration=args.min_duration,
             min_gap=args.min_gap
