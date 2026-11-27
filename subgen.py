@@ -26,9 +26,14 @@ except ImportError:
 
 
 def check_deps():
-    if not shutil.which("ffmpeg"):
-        print("Error: ffmpeg not found. Install it with: sudo apt install ffmpeg", file=sys.stderr)
-        sys.exit(1)
+    for tool in ("ffmpeg", "ffprobe"):
+        if not shutil.which(tool):
+            print(
+                f"Error: {tool} not found. Install ffmpeg (which includes ffprobe) "
+                "and ensure it is on your PATH.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
     try:
         import whisper
     except ImportError:
@@ -45,43 +50,52 @@ def get_video_duration(video_path):
          "-of", "csv=p=0", video_path],
         capture_output=True, text=True, check=True
     )
-    return float(result.stdout.strip())
+    raw = result.stdout.strip()
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Could not determine duration of {video_path!r}: {raw!r}"
+        ) from exc
 
 
 def extract_audio(video_path, audio_path, total_duration):
     pbar = tqdm(total=100, desc="Extracting audio", unit="%", file=sys.stderr) if tqdm else None
     proc = subprocess.Popen(
-        ["ffmpeg", "-i", video_path, "-vn", "-acodec", "pcm_s16le",
-         "-ar", "16000", "-ac", "1", audio_path, "-y", "-progress", "pipe:1"],
-        stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True
+        ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "pcm_s16le",
+         "-ar", "16000", "-ac", "1", audio_path, "-progress", "pipe:1"],
+        stderr=subprocess.STDOUT, stdout=subprocess.PIPE, universal_newlines=True
     )
-    # ffmpeg -progress outputs to stdout
+    # ffmpeg -progress writes key=value lines to stdout; merge stderr into the
+    # same pipe so a chatty ffmpeg run can never fill an unread pipe and hang.
+    log_lines = []
     for line in proc.stdout:
+        line = line.rstrip("\n\r")
         m = re.match(r"out_time_us=(\d+)", line)
-        if m and pbar:
+        if m and pbar and total_duration > 0:
             elapsed = int(m.group(1)) / 1_000_000
             pct = min(int(elapsed / total_duration * 100), 100)
             pbar.n = pct
             pbar.refresh()
+        elif line and not re.match(r"^[a-z_]+=", line) and len(log_lines) < 50:
+            log_lines.append(line)
     proc.wait()
     if pbar:
         pbar.n = 100
         pbar.refresh()
         pbar.close()
     if proc.returncode != 0:
-        raise RuntimeError("ffmpeg failed")
+        detail = "\n".join(log_lines[-10:]) or "no ffmpeg diagnostics"
+        raise RuntimeError(f"ffmpeg failed (exit code {proc.returncode}): {detail}")
 
 
 def transcribe(audio_path, model_name="base", language=None):
     import whisper
     # Whisper's transcribe already shows a tqdm bar when verbose=None (default)
-    if tqdm:
-        print(f"Loading Whisper model ({model_name}) ...", file=sys.stderr)
-    else:
-        print(f"Loading Whisper model ({model_name}) ...", file=sys.stderr)
+    print(f"Loading Whisper model ({model_name}) ...", file=sys.stderr)
     model = whisper.load_model(model_name)
 
-    print(f"Transcribing ...", file=sys.stderr)
+    print("Transcribing ...", file=sys.stderr)
     opts = {"task": "transcribe", "word_timestamps": True, "verbose": None}
     if language:
         opts["language"] = language
@@ -261,10 +275,10 @@ def _write_srt_entry(f, index, chunk, text):
 
 
 def _fmt_time(seconds):
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int((seconds - int(seconds)) * 1000)
+    total_ms = max(0, round(seconds * 1000))
+    h, rem = divmod(total_ms, 3_600_000)
+    m, rem = divmod(rem, 60_000)
+    s, ms = divmod(rem, 1000)
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 

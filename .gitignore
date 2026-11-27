@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local environments
+venv/
+.venv/
+
+# Build artifacts
+build/
+dist/
+
+# Editor files
+.idea/
+.vscode/

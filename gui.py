@@ -2,6 +2,7 @@
 """GUI frontend for SubGen — subtitle generator with Whisper + Ollama."""
 
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -29,13 +30,13 @@ class SubGenGUI:
         self.root.resizable(True, True)
         self.proc = None
         self.trans_frame = None
+        self.log_queue = queue.Queue()
         self.build_widgets()
 
     def build_widgets(self):
         main = ttk.Frame(self.root, padding=12)
         main.pack(fill=tk.BOTH, expand=True)
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(6, weight=1)
 
         # ── Video file ──
         ttk.Label(main, text="Video File:", font=("", 10, "bold")).grid(
@@ -109,7 +110,7 @@ class SubGenGUI:
         self.src_code_var = tk.StringVar(value="en")
         self.tgt_lang_var = tk.StringVar(value="Spanish")
         self.tgt_code_var = tk.StringVar(value="es")
-        self.ollama_var = tk.StringVar(value="translategemma:4b")
+        self.ollama_var = tk.StringVar(value="gemma")
         self.ollama_url_var = tk.StringVar(value="")
         self.batch_size_var = tk.StringVar(value="20")
         self.timeout_var = tk.StringVar(value="300")
@@ -179,7 +180,24 @@ class SubGenGUI:
         self.run_btn.pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(btn_row, text="Clear Log", command=self.clear_log).pack(side=tk.LEFT)
 
+        self.root.after(100, self._poll_log)
+
     # ── helpers ──
+
+    def _poll_log(self):
+        """Marshal worker-thread messages onto the Tk main thread."""
+        try:
+            while True:
+                kind, value = self.log_queue.get_nowait()
+                if kind == "log":
+                    self.log(value)
+                elif kind == "status":
+                    self.set_status(value)
+                elif kind == "finish":
+                    self.finish()
+        except queue.Empty:
+            pass
+        self.root.after(100, self._poll_log)
 
     def browse_video(self):
         path = filedialog.askopenfilename(
@@ -276,21 +294,21 @@ class SubGenGUI:
                 clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", line)
                 clean = re.sub(r"\r", "", clean)
                 if clean:
-                    self.log(clean)
+                    self.log_queue.put(("log", clean))
 
             self.proc.wait()
             if self.proc.returncode == 0:
-                self.set_status("Done ✓")
-                self.log("Done ✓")
+                self.log_queue.put(("status", "Done ✓"))
+                self.log_queue.put(("log", "Done ✓"))
             else:
-                self.set_status("Failed ✗")
-                self.log(f"Process exited with code {self.proc.returncode}")
+                self.log_queue.put(("status", "Failed ✗"))
+                self.log_queue.put(("log", f"Process exited with code {self.proc.returncode}"))
         except Exception as e:
-            self.log(f"Error: {e}")
-            self.set_status("Failed ✗")
+            self.log_queue.put(("log", f"Error: {e}"))
+            self.log_queue.put(("status", "Failed ✗"))
         finally:
             self.proc = None
-            self.root.after(0, self.finish)
+            self.log_queue.put(("finish", None))
 
     def run(self):
         video = self.video_path.get().strip()
