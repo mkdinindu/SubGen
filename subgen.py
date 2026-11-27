@@ -81,7 +81,7 @@ def transcribe(audio_path, model_name="base", language=None):
 
 
 def build_subtitle_chunks(segments, chars_per_line=42, max_lines=2,
-                          min_duration=1.0, max_duration=6.0):
+                          min_duration=1.0, max_duration=6.0, min_gap=0.0):
     words = []
     for seg in segments:
         for word in seg.get("words", []):
@@ -106,9 +106,6 @@ def build_subtitle_chunks(segments, chars_per_line=42, max_lines=2,
 
         if (lines > max_lines or candidate_duration > max_duration) and current_chunk:
             chunk_end = current_chunk[-1]["end"]
-            duration = chunk_end - chunk_start
-            if duration < min_duration:
-                chunk_end = chunk_start + min_duration
             text = " ".join(wd["text"] for wd in current_chunk)
             chunks.append({"start": chunk_start, "end": chunk_end, "text": text})
             current_chunk = [w]
@@ -120,6 +117,27 @@ def build_subtitle_chunks(segments, chars_per_line=42, max_lines=2,
         chunk_end = current_chunk[-1]["end"]
         text = " ".join(wd["text"] for wd in current_chunk)
         chunks.append({"start": chunk_start, "end": chunk_end, "text": text})
+
+    min_gap = max(0.0, min_gap)
+    min_duration = max(0.0, min_duration)
+
+    for i, chunk in enumerate(chunks):
+        next_start = chunks[i + 1]["start"] if i + 1 < len(chunks) else None
+        max_end = (next_start - min_gap) if next_start is not None else None
+
+        desired_end = max(chunk["end"], chunk["start"] + min_duration)
+        if max_end is not None:
+            desired_end = min(desired_end, max_end)
+
+        # Keep cue end after start. If there is no room for gap/min-duration,
+        # clip to the latest possible end before the next cue.
+        if desired_end <= chunk["start"]:
+            if max_end is not None and max_end > chunk["start"]:
+                desired_end = max_end
+            else:
+                desired_end = chunk["start"] + 0.001
+
+        chunk["end"] = desired_end
 
     return chunks
 
@@ -205,6 +223,8 @@ def main():
                         help="Minimum subtitle duration in seconds (default: 1.0)")
     parser.add_argument("--max-duration", type=float, default=6.0,
                         help="Maximum subtitle duration in seconds (default: 6.0)")
+    parser.add_argument("--min-gap", type=float, default=0.0,
+                        help="Minimum gap between subtitles in seconds (default: 0.0)")
     parser.add_argument("--chars-per-line", type=int, default=42,
                         help="Max characters per line (default: 42)")
 
@@ -235,7 +255,8 @@ def main():
             result["segments"],
             chars_per_line=args.chars_per_line,
             max_duration=args.max_duration,
-            min_duration=args.min_duration
+            min_duration=args.min_duration,
+            min_gap=args.min_gap
         )
 
         if args.delay != 0:

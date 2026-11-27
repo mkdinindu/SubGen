@@ -100,6 +100,7 @@ This writes `movie.srt` next to the video.
 | `--delay` | `0.0` | Offset all timestamps in seconds (negative = earlier) |
 | `--min-duration` | `1.0` | Minimum subtitle duration in seconds |
 | `--max-duration` | `6.0` | Maximum subtitle duration in seconds |
+| `--min-gap` | `0.0` | Minimum gap between subtitles in seconds |
 | `--chars-per-line` | `42` | Maximum characters per subtitle line |
 | `--translate` | off | Enable translation via Ollama |
 | `--source-lang` | `English` | Source language name |
