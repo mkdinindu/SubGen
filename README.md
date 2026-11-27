@@ -33,7 +33,7 @@ SubGen extracts the audio, transcribes it with word-level timestamps, splits the
 
 ## Requirements
 
-- Windows 10/11, macOS, or Linux (Windows users: see [Installation on Windows](#Installation-on-Windows) for a full walkthrough)
+- Windows 10/11, macOS, or Linux (Windows users: see [Installation on Windows](#installation-on-windows) for a full walkthrough)
 - Python 3.9+
 - [`ffmpeg`](https://ffmpeg.org/) (includes `ffprobe`)
 - [`openai-whisper`](https://pypi.org/project/openai-whisper/)
@@ -42,9 +42,9 @@ SubGen extracts the audio, transcribes it with word-level timestamps, splits the
 
 A GPU is recommended but not required for the CLI; Whisper will fall back to CPU (slower).
 
-## Installation on Linux
+## Installation on Linux and macOS
 
-> **Windows:** The commands below use bash syntax. If you're on Windows, follow [Installation on Windows](#Installation-on-Windows) for the equivalent PowerShell steps.
+> **Windows:** The commands below use bash syntax. If you're on Windows, follow [Installation on Windows](#installation-on-windows) for the equivalent PowerShell steps.
 
 ### 1. Install system dependencies
 
@@ -150,6 +150,8 @@ Install Ollama with `winget install --id Ollama.Ollama -e` or the installer from
 ollama pull gemma
 ```
 
+> The GUI starts with `translategemma:4b` as its default Ollama model. To use that default, also run `ollama pull translategemma:4b`, or change the **Ollama Model** field in the GUI to `gemma` to match these examples.
+
 SubGen uses `http://127.0.0.1:11434` by default. For a different server, set `OLLAMA_HOST` for the current PowerShell session:
 
 ```powershell
@@ -162,7 +164,7 @@ To keep that setting for future sessions:
 setx OLLAMA_HOST "http://192.168.1.10:11434"
 ```
 
-You can also pass `--ollama-url` on the CLI or fill **Server URL** in the GUI instead of using an environment variable.
+`setx` affects newly opened terminals; the `$env:` line above covers the current session. You can also pass `--ollama-url` on the CLI or fill **Server URL** in the GUI instead of using an environment variable.
 
 **6. Verify and run**
 
