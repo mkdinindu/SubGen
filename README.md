@@ -8,8 +8,6 @@ SubGen extracts the audio, transcribes it with word-level timestamps, splits the
 
 <img width="748" height="756" alt="image" src="https://github.com/user-attachments/assets/80412281-9218-437d-ad93-a86388598d1e" />
 
-
-
 ## Features
 
 - 🎙️ Speech-to-text with Whisper (`tiny` → `large`)
@@ -23,18 +21,19 @@ SubGen extracts the audio, transcribes it with word-level timestamps, splits the
 
 ## Project structure
 
-| File | Purpose |
-| --- | --- |
-| `subgen.py` | CLI pipeline: audio extraction → transcription → chunking → SRT output |
-| `gui.py` | Tkinter desktop frontend that runs `subgen.py` |
-| `translate.py` | Standalone helper to translate text with Ollama |
-| `ollama_client.py` | Shared batched Ollama HTTP translation client (JSON output, retries, timeouts) |
-| `subgen_colab.ipynb` | Google Colab notebook (GPU, `faster-whisper`) |
-| `rus.srt` | Example generated subtitle file |
-| `SubGEn.zip` | Packaged copy of the Python sources |
+| File                 | Purpose                                                                        |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `subgen.py`          | CLI pipeline: audio extraction → transcription → chunking → SRT output         |
+| `gui.py`             | Tkinter desktop frontend that runs `subgen.py`                                 |
+| `translate.py`       | Standalone helper to translate text with Ollama                                |
+| `ollama_client.py`   | Shared batched Ollama HTTP translation client (JSON output, retries, timeouts) |
+| `subgen_colab.ipynb` | Google Colab notebook (GPU, `faster-whisper`)                                  |
+| `rus.srt`            | Example generated subtitle file                                                |
+| `SubGEn.zip`         | Packaged copy of the Python sources                                            |
 
 ## Requirements
 
+- Windows 10/11, macOS, or Linux (Windows users: see [Installation on Windows](#Installation-on-Windows) for a full walkthrough)
 - Python 3.9+
 - [`ffmpeg`](https://ffmpeg.org/) (includes `ffprobe`)
 - [`openai-whisper`](https://pypi.org/project/openai-whisper/)
@@ -43,7 +42,9 @@ SubGen extracts the audio, transcribes it with word-level timestamps, splits the
 
 A GPU is recommended but not required for the CLI; Whisper will fall back to CPU (slower).
 
-## Installation
+## Installation on Linux
+
+> **Windows:** The commands below use bash syntax. If you're on Windows, follow [Installation on Windows](#Installation-on-Windows) for the equivalent PowerShell steps.
 
 ### 1. Install system dependencies
 
@@ -59,7 +60,7 @@ brew install ffmpeg
 
 ```bash
 python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+source venv/bin/activate        # Windows PowerShell: .\venv\Scripts\Activate.ps1
 
 pip install --upgrade pip
 pip install openai-whisper tqdm
@@ -77,6 +78,106 @@ ollama pull gemma       # use the same name you pass to --ollama-model
 ```
 
 SubGen connects to `http://127.0.0.1:11434` by default. Set `OLLAMA_HOST` (or pass `--ollama-url`) to use a different server.
+
+## Installation on Windows
+
+Open **PowerShell** (Windows Terminal or `powershell.exe`) in the project folder and run the steps below. There is no separate installer — SubGen runs from this source checkout.
+
+**1. Install Python 3.9+**
+
+Install Python from [python.org](https://www.python.org/downloads/windows/) or the Microsoft Store, then verify:
+
+```powershell
+python --version
+py --version        # Windows Python launcher, if installed
+```
+
+If `python` opens the Microsoft Store instead of running Python, use `py` in place of `python` in the commands below (for example `py -m venv venv`).
+
+**2. Install ffmpeg and ffprobe**
+
+SubGen needs both `ffmpeg` and `ffprobe` on your `PATH`. With [winget](https://learn.microsoft.com/windows/package-manager/winget/) (Windows Package Manager):
+
+```powershell
+winget install --id Gyan.FFmpeg -e
+```
+
+With [Chocolatey](https://chocolatey.org/) instead:
+
+```powershell
+choco install ffmpeg
+```
+
+Close and reopen PowerShell so the `PATH` change takes effect, then check:
+
+```powershell
+ffmpeg -version
+ffprobe -version
+```
+
+If you prefer a manual install, download a Windows build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/), extract it (for example to `C:\ffmpeg`), and add the folder containing `ffmpeg.exe` (e.g. `C:\ffmpeg\bin`) to your user `PATH`.
+
+**3. Create and activate a virtual environment**
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+If activation fails with an execution-policy error, allow local scripts for your user account and try again:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+.\venv\Scripts\Activate.ps1
+```
+
+The prompt should now show `(venv)`. Run `deactivate` when you want to leave the environment.
+
+**4. Install Python packages**
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install openai-whisper tqdm
+```
+
+> For NVIDIA GPU acceleration, install a CUDA-enabled PyTorch build first (see the PyTorch note in the general installation steps above), then install `openai-whisper`. CPU-only works too, but transcription is much slower.
+
+**5. (Optional) Install Ollama for translation**
+
+Install Ollama with `winget install --id Ollama.Ollama -e` or the installer from [ollama.com/download](https://ollama.com/download). Start the Ollama desktop app (or run `ollama serve`), then pull a model:
+
+```powershell
+ollama pull gemma
+```
+
+SubGen uses `http://127.0.0.1:11434` by default. For a different server, set `OLLAMA_HOST` for the current PowerShell session:
+
+```powershell
+$env:OLLAMA_HOST = "http://192.168.1.10:11434"
+```
+
+To keep that setting for future sessions:
+
+```powershell
+setx OLLAMA_HOST "http://192.168.1.10:11434"
+```
+
+You can also pass `--ollama-url` on the CLI or fill **Server URL** in the GUI instead of using an environment variable.
+
+**6. Verify and run**
+
+```powershell
+python subgen.py --help        # command-line tool
+python gui.py                  # desktop GUI
+```
+
+Generate subtitles from a video (the `.srt` is written next to the video, or to the path given with `-o`):
+
+```powershell
+python subgen.py "C:\Videos\movie.mp4"
+python subgen.py "C:\Videos\movie.mp4" -o "C:\Videos\movie.srt" --whisper-model small --language en
+python subgen.py "C:\Videos\movie.mp4" --translate --target-lang Spanish --target-code es --ollama-model gemma
+```
 
 ## Usage
 
@@ -96,28 +197,28 @@ This writes `movie.srt` next to the video.
 
 #### Options
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `video` | — | Path to the input video file (required) |
-| `-o`, `--output` | `<video>.srt` | Output SRT path |
-| `--whisper-model` | `base` | Model size: `tiny`, `base`, `small`, `medium`, `large` |
-| `--language` | auto-detect | Audio language code, e.g. `en`, `es`, `ru` |
-| `--delay` | `0.0` | Offset all timestamps in seconds (negative = earlier) |
-| `--min-duration` | `1.0` | Minimum subtitle duration in seconds |
-| `--max-duration` | `6.0` | Maximum subtitle duration in seconds |
-| `--min-gap` | `0.0` | Minimum gap between subtitles in seconds |
-| `--chars-per-line` | `42` | Maximum characters per subtitle line (line breaks are inserted in the SRT) |
-| `--max-lines` | `2` | Maximum number of lines per subtitle |
-| `--translate` | off | Enable translation via Ollama |
-| `--source-lang` | `English` | Source language name |
-| `--source-code` | `en` | Source language code |
-| `--target-lang` | `Spanish` | Target language name |
-| `--target-code` | `es` | Target language code |
-| `--ollama-model` | `gemma` | Ollama model used for translation |
-| `--ollama-url` | `OLLAMA_HOST` or `http://127.0.0.1:11434` | Ollama HTTP server URL |
-| `--ollama-timeout` | `300` | Seconds to wait for each Ollama request |
-| `--ollama-retries` | `3` | Retries for transient request/JSON failures |
-| `--batch-size` | `20` | Subtitle cues sent in each Ollama request |
+| Option             | Default                                   | Description                                                                |
+| ------------------ | ----------------------------------------- | -------------------------------------------------------------------------- |
+| `video`            | —                                         | Path to the input video file (required)                                    |
+| `-o`, `--output`   | `<video>.srt`                             | Output SRT path                                                            |
+| `--whisper-model`  | `base`                                    | Model size: `tiny`, `base`, `small`, `medium`, `large`                     |
+| `--language`       | auto-detect                               | Audio language code, e.g. `en`, `es`, `ru`                                 |
+| `--delay`          | `0.0`                                     | Offset all timestamps in seconds (negative = earlier)                      |
+| `--min-duration`   | `1.0`                                     | Minimum subtitle duration in seconds                                       |
+| `--max-duration`   | `6.0`                                     | Maximum subtitle duration in seconds                                       |
+| `--min-gap`        | `0.0`                                     | Minimum gap between subtitles in seconds                                   |
+| `--chars-per-line` | `42`                                      | Maximum characters per subtitle line (line breaks are inserted in the SRT) |
+| `--max-lines`      | `2`                                       | Maximum number of lines per subtitle                                       |
+| `--translate`      | off                                       | Enable translation via Ollama                                              |
+| `--source-lang`    | `English`                                 | Source language name                                                       |
+| `--source-code`    | `en`                                      | Source language code                                                       |
+| `--target-lang`    | `Spanish`                                 | Target language name                                                       |
+| `--target-code`    | `es`                                      | Target language code                                                       |
+| `--ollama-model`   | `gemma`                                   | Ollama model used for translation                                          |
+| `--ollama-url`     | `OLLAMA_HOST` or `http://127.0.0.1:11434` | Ollama HTTP server URL                                                     |
+| `--ollama-timeout` | `300`                                     | Seconds to wait for each Ollama request                                    |
+| `--ollama-retries` | `3`                                       | Retries for transient request/JSON failures                                |
+| `--batch-size`     | `20`                                      | Subtitle cues sent in each Ollama request                                  |
 
 #### Examples
 
@@ -163,7 +264,6 @@ python gui.py
 
 Select a video, adjust the Whisper and timing settings, optionally enable translation (including Ollama server URL, batch size, timeout, and retries), and click **Generate Subtitles**. The pipeline output is streamed to the log panel.
 
-
 ### Standalone translation
 
 `translate.py` translates a single string and prints the result:
@@ -184,17 +284,17 @@ python translate.py "Hello, world!" --target-lang Spanish --target-code es --mod
 
 ## Troubleshooting
 
-| Problem | Fix |
-| --- | --- |
-| `ffmpeg not found` | Install ffmpeg and ensure it is on your `PATH`. |
-| `openai-whisper not installed` | `pip install openai-whisper` in the active environment. |
-| Cannot connect to Ollama | Start the Ollama server (`ollama serve`) and check `--ollama-url` / `OLLAMA_HOST`. |
-| Translation times out | Increase `--ollama-timeout`; if the model returns malformed/incomplete JSON, increase `--ollama-retries`. |
-| Translation is slow | Increase `--batch-size` to reduce request count, or use a smaller model/more powerful machine. |
-| Wrong number of translations | Lower `--batch-size`; very large batches can cause models to drop cues. |
-| Out of memory | Use a smaller Whisper model (`tiny` or `base`). |
-| Subtitles out of sync | Adjust `--delay` (positive = later, negative = earlier). |
-| No word timestamps | Some models/languages produce poor word timing; try a larger model. |
+| Problem                        | Fix                                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `ffmpeg not found`             | Install ffmpeg and ensure it is on your `PATH`.                                                           |
+| `openai-whisper not installed` | `pip install openai-whisper` in the active environment.                                                   |
+| Cannot connect to Ollama       | Start the Ollama server (`ollama serve`) and check `--ollama-url` / `OLLAMA_HOST`.                        |
+| Translation times out          | Increase `--ollama-timeout`; if the model returns malformed/incomplete JSON, increase `--ollama-retries`. |
+| Translation is slow            | Increase `--batch-size` to reduce request count, or use a smaller model/more powerful machine.            |
+| Wrong number of translations   | Lower `--batch-size`; very large batches can cause models to drop cues.                                   |
+| Out of memory                  | Use a smaller Whisper model (`tiny` or `base`).                                                           |
+| Subtitles out of sync          | Adjust `--delay` (positive = later, negative = earlier).                                                  |
+| No word timestamps             | Some models/languages produce poor word timing; try a larger model.                                       |
 
 ## Notes and limitations
 
