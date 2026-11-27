@@ -10,6 +10,15 @@ import subprocess
 import sys
 import tempfile
 
+from ollama_client import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_RETRIES,
+    DEFAULT_TIMEOUT,
+    OllamaError,
+    normalize_base_url,
+    translate_batch,
+)
+
 try:
     from tqdm import tqdm
 except ImportError:
@@ -190,40 +199,65 @@ def _count_lines(text, max_chars):
     return max(1, len(_wrap_lines(text, max_chars)))
 
 
-def translate_text(text, source_lang, source_code, target_lang, target_code,
-                   model="gemma"):
-    prompt = (
-        f"You are a professional {source_lang} ({source_code}) to {target_lang} ({target_code}) translator. "
-        f"Your goal is to accurately convey the meaning and nuances of the original {source_lang} text "
-        f"while adhering to {target_lang} grammar, vocabulary, and cultural sensitivities.\n"
-        f"Produce only the {target_lang} translation, without any additional explanations or commentary. "
-        f"There can be some unrelated, letters, artifact in input. avoid translating them or including them in output "
-        f"Please translate the following {source_lang} text into {target_lang}:\n\n"
-        f"{text}"
+def translate_cues(texts, source_lang, source_code, target_lang, target_code,
+                   model="gemma", base_url=None, timeout=DEFAULT_TIMEOUT,
+                   retries=DEFAULT_RETRIES):
+    """Translate a batch of cues through the Ollama HTTP API."""
+    return translate_batch(
+        texts,
+        source_lang=source_lang,
+        source_code=source_code,
+        target_lang=target_lang,
+        target_code=target_code,
+        model=model,
+        base_url=base_url,
+        timeout=timeout,
+        retries=retries,
     )
-    proc = subprocess.run(
-        ["ollama", "run", model, prompt],
-        capture_output=True, text=True, timeout=300
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"ollama failed: {proc.stderr.strip()}")
-    output = proc.stdout.strip()
-    if prompt[:80] in output:
-        output = output.replace(prompt, "", 1).strip()
-    return output
 
 
-def write_srt(chunks, output_path, translate_fn=None):
-    iterator = tqdm(chunks, desc="Translating" if translate_fn else "Writing subtitles",
-                    unit="seg", file=sys.stderr) if tqdm else chunks
-    with open(output_path, "w", encoding="utf-8") as f:
-        for i, chunk in enumerate(iterator, 1):
-            text = chunk["text"]
+def write_srt(chunks, output_path, translate_fn=None,
+              batch_size=DEFAULT_BATCH_SIZE):
+    """Write SRT entries, translating cues in batches when requested.
+
+    ``translate_fn`` receives a list of cue texts and must return a list of the
+    same length, preserving order.
+    """
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+
+    total = len(chunks)
+    pbar = tqdm(total=total, desc="Translating" if translate_fn else "Writing subtitles",
+                unit="seg", file=sys.stderr) if tqdm else None
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
             if translate_fn:
-                text = translate_fn(text)
-            start = _fmt_time(chunk["start"])
-            end = _fmt_time(chunk["end"])
-            f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
+                for start in range(0, total, batch_size):
+                    batch = chunks[start:start + batch_size]
+                    translations = translate_fn([c["text"] for c in batch])
+                    if len(translations) != len(batch):
+                        raise RuntimeError(
+                            f"Translator returned {len(translations)} result(s) "
+                            f"for {len(batch)} cue(s)"
+                        )
+                    for offset, chunk in enumerate(batch):
+                        _write_srt_entry(f, start + offset + 1, chunk, translations[offset])
+                    if pbar:
+                        pbar.update(len(batch))
+            else:
+                for i, chunk in enumerate(chunks, 1):
+                    _write_srt_entry(f, i, chunk, chunk["text"])
+                    if pbar:
+                        pbar.update(1)
+    finally:
+        if pbar:
+            pbar.close()
+
+
+def _write_srt_entry(f, index, chunk, text):
+    start = _fmt_time(chunk["start"])
+    end = _fmt_time(chunk["end"])
+    f.write(f"{index}\n{start} --> {end}\n{text}\n\n")
 
 
 def _fmt_time(seconds):
@@ -251,6 +285,14 @@ def main():
     parser.add_argument("--target-lang", default="Spanish", help="Target language name")
     parser.add_argument("--target-code", default="es", help="Target language code")
     parser.add_argument("--ollama-model", default="gemma", help="Ollama model for translation")
+    parser.add_argument("--ollama-url", default=None,
+                        help="Ollama server URL (default: OLLAMA_HOST or http://127.0.0.1:11434)")
+    parser.add_argument("--ollama-timeout", type=float, default=DEFAULT_TIMEOUT,
+                        help="Seconds to wait for each Ollama request (default: 300)")
+    parser.add_argument("--ollama-retries", type=int, default=DEFAULT_RETRIES,
+                        help="Retries for failed Ollama requests (default: 3)")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE,
+                        help="Subtitle cues per Ollama request (default: 20)")
     # Subtitle timing options
     parser.add_argument("--min-duration", type=float, default=1.0,
                         help="Minimum subtitle duration in seconds (default: 1.0)")
@@ -269,17 +311,18 @@ def main():
         parser.error("--chars-per-line must be at least 1")
     if args.max_lines < 1:
         parser.error("--max-lines must be at least 1")
+    if args.batch_size <= 0:
+        parser.error("--batch-size must be positive")
+    if args.ollama_timeout <= 0:
+        parser.error("--ollama-timeout must be positive")
+    if args.ollama_retries < 0:
+        parser.error("--ollama-retries cannot be negative")
 
     if not os.path.isfile(args.video):
         print(f"Error: file '{args.video}' not found", file=sys.stderr)
         sys.exit(1)
 
     check_deps()
-
-    if args.translate and not shutil.which("ollama"):
-        print("Error: ollama not found (needed for translation).", file=sys.stderr)
-        print("Install from https://ollama.com", file=sys.stderr)
-        sys.exit(1)
 
     output = args.output or os.path.splitext(args.video)[0] + ".srt"
 
@@ -305,16 +348,33 @@ def main():
                 c["start"] = max(0, c["start"] + args.delay)
                 c["end"] = max(0, c["end"] + args.delay)
 
+        translator = None
         if args.translate:
-            def translator(text):
-                return translate_text(
-                    text, args.source_lang, args.source_code,
-                    args.target_lang, args.target_code, args.ollama_model
-                )
-        else:
-            translator = None
+            try:
+                server_url = normalize_base_url(args.ollama_url)
+            except OllamaError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
 
-        write_srt(chunks, output, translator)
+            print(
+                f"Translating {len(chunks)} cue(s) via Ollama at {server_url} "
+                f"(batch size {args.batch_size}) ...",
+                file=sys.stderr,
+            )
+
+            def translator(texts):
+                return translate_cues(
+                    texts, args.source_lang, args.source_code,
+                    args.target_lang, args.target_code, args.ollama_model,
+                    base_url=server_url, timeout=args.ollama_timeout,
+                    retries=args.ollama_retries,
+                )
+
+        try:
+            write_srt(chunks, output, translator, batch_size=args.batch_size)
+        except OllamaError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     print(f"Done → {output}", file=sys.stderr)
 
