@@ -39,7 +39,7 @@ class SubGenGUI:
         main.columnconfigure(0, weight=1)
 
         # ── Video file ──
-        ttk.Label(main, text="Video File:", font=("", 10, "bold")).grid(
+        ttk.Label(main, text="Media File:", font=("", 10, "bold")).grid(
             row=0, column=0, sticky=tk.W, pady=(0, 2))
         row1 = ttk.Frame(main)
         row1.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
@@ -201,8 +201,13 @@ class SubGenGUI:
 
     def browse_video(self):
         path = filedialog.askopenfilename(
-            title="Select Video File",
-            filetypes=[("Video files", "*.mp4 *.mkv *.avi *.mov *.webm *.m4v"), ("All files", "*.*")]
+            title="Select Audio or Video File",
+            filetypes=[
+                ("Media files", "*.mp4 *.mkv *.avi *.mov *.webm *.m4v *.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                ("Video files", "*.mp4 *.mkv *.avi *.mov *.webm *.m4v"),
+                ("Audio files", "*.mp3 *.wav *.m4a *.aac *.flac *.ogg"),
+                ("All files", "*.*"),
+            ]
         )
         if path:
             self.video_path.set(path)
