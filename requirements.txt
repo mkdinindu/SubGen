@@ -3,3 +3,6 @@ openai-whisper
 
 # Progress bars used by the CLI
 tqdm
+
+# Modern rounded GUI theme (Windows/macOS/Linux)
+sv-ttk

@@ -10,12 +10,30 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+import sv_ttk
 
-LANGUAGES = [
-    "", "en", "es", "fr", "de", "it", "pt", "nl", "ru", "ja",
-    "ko", "zh", "ar", "hi", "tr", "pl", "sv", "da", "fi", "no",
-    "cs", "hu", "ro", "el", "he", "th", "vi", "id", "ms"
-]
+
+# Display name -> Whisper language code. The GUI shows full names while the CLI
+# still receives the short codes Whisper expects.
+LANGUAGE_CODES = {
+    "Auto-detect": "",
+    "English": "en", "Spanish": "es", "French": "fr", "German": "de",
+    "Italian": "it", "Portuguese": "pt", "Dutch": "nl", "Russian": "ru",
+    "Japanese": "ja", "Korean": "ko", "Chinese": "zh", "Arabic": "ar",
+    "Hindi": "hi", "Turkish": "tr", "Polish": "pl", "Swedish": "sv",
+    "Danish": "da", "Finnish": "fi", "Norwegian": "no", "Czech": "cs",
+    "Hungarian": "hu", "Romanian": "ro", "Greek": "el", "Hebrew": "he",
+    "Thai": "th", "Vietnamese": "vi", "Indonesian": "id", "Malay": "ms",
+}
+LANGUAGES = list(LANGUAGE_CODES)
+
+
+def language_code(value):
+    """Return the Whisper code for a language display name (or a raw code)."""
+    value = (value or "").strip()
+    if not value or value == "Auto-detect":
+        return ""
+    return LANGUAGE_CODES.get(value, value)
 
 
 def resource_path():
@@ -26,23 +44,56 @@ class SubGenGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("SubGen — Subtitle Generator")
-        self.root.geometry("720x660")
+        self.root.geometry("760x720")
+        self.root.minsize(620, 560)
         self.root.resizable(True, True)
+        self._configure_styles()
         self.proc = None
         self.trans_frame = None
         self.log_queue = queue.Queue()
         self.build_widgets()
+
+    def _configure_styles(self):
+        """Use sv-ttk for rounded, native-looking fields/buttons on every OS."""
+        sv_ttk.set_theme("dark", root=self.root)
+        self.accent = self.root.tk.call("set", "ttk::theme::sv_dark::colors(-accent)")
+        self.bg_color = self.root.tk.call("set", "ttk::theme::sv_dark::colors(-bg)")
+        self.fg_color = self.root.tk.call("set", "ttk::theme::sv_dark::colors(-fg)")
+        self.sel_color = self.root.tk.call("set", "ttk::theme::sv_dark::colors(-selbg)")
+
+        style = ttk.Style()
+        style.configure("TEntry", font=("Segoe UI", 10))
+        style.configure("TCombobox", font=("Segoe UI", 10))
+        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"),
+                        foreground=self.accent)
+        style.configure("Subtitle.TLabel", font=("Segoe UI", 9))
+        style.configure("Status.TLabel", font=("Segoe UI", 10, "bold"))
+        style.configure("Success.TLabel", font=("Segoe UI", 10, "bold"),
+                        foreground="#5ad19b")
+        style.configure("Error.TLabel", font=("Segoe UI", 10, "bold"),
+                        foreground="#ff7b7b")
 
     def build_widgets(self):
         main = ttk.Frame(self.root, padding=12)
         main.pack(fill=tk.BOTH, expand=True)
         main.columnconfigure(0, weight=1)
 
-        # ── Video file ──
-        ttk.Label(main, text="Media File:", font=("", 10, "bold")).grid(
-            row=0, column=0, sticky=tk.W, pady=(0, 2))
+        # ── Header ──
+        header = ttk.Frame(main, padding=(12, 10))
+        header.grid(row=0, column=0, sticky=tk.EW, pady=(0, 10))
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="SubGen", style="Title.TLabel").grid(
+            row=0, column=0, sticky=tk.W)
+        ttk.Label(header, text="Whisper transcription  •  Ollama translation",
+                  style="Subtitle.TLabel").grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
+        ttk.Separator(header, orient=tk.HORIZONTAL).grid(
+            row=2, column=0, sticky=tk.EW, pady=(8, 0))
+
+        # ── Media file ──
+        ttk.Label(main, text="Media File:").grid(
+            row=1, column=0, sticky=tk.W, pady=(0, 2))
         row1 = ttk.Frame(main)
-        row1.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
+        row1.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
         row1.columnconfigure(0, weight=1)
         self.video_path = tk.StringVar()
         ttk.Entry(row1, textvariable=self.video_path).grid(row=0, column=0, sticky=tk.EW)
@@ -50,11 +101,11 @@ class SubGenGUI:
 
         # ── Whisper settings ──
         self.model_var = tk.StringVar(value="base")
-        self.lang_var = tk.StringVar(value="")
+        self.lang_var = tk.StringVar(value="Auto-detect")
         self.output_var = tk.StringVar(value="")
 
         opts_frame = ttk.LabelFrame(main, text="Whisper Settings", padding=8)
-        opts_frame.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
+        opts_frame.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
         opts_frame.columnconfigure(1, weight=1)
 
         ttk.Label(opts_frame, text="Model:").grid(row=0, column=0, sticky=tk.W, padx=(0, 6))
@@ -64,7 +115,7 @@ class SubGenGUI:
 
         ttk.Label(opts_frame, text="Audio Language:").grid(row=0, column=2, sticky=tk.W, padx=(12, 6))
         lang_cb = ttk.Combobox(opts_frame, textvariable=self.lang_var,
-                               values=LANGUAGES, state="normal", width=8)
+                               values=LANGUAGES, state="readonly", width=18)
         lang_cb.grid(row=0, column=3, sticky=tk.W)
 
         ttk.Label(opts_frame, text="Output:").grid(row=1, column=0, sticky=tk.W, padx=(0, 6), pady=(6, 0))
@@ -73,7 +124,7 @@ class SubGenGUI:
 
         # ── Timing ──
         timing_frame = ttk.LabelFrame(main, text="Timing", padding=8)
-        timing_frame.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
+        timing_frame.grid(row=4, column=0, sticky=tk.EW, pady=(0, 8))
 
         self.delay_var = tk.StringVar(value="0.0")
         self.min_dur_var = tk.StringVar(value="1.0")
@@ -98,7 +149,7 @@ class SubGenGUI:
         # ── Translation ──
         self.translate_var = tk.BooleanVar(value=False)
         self.trans_frame = ttk.LabelFrame(main, text="Translation (Ollama)", padding=8)
-        self.trans_frame.grid(row=4, column=0, sticky=tk.EW, pady=(0, 8))
+        self.trans_frame.grid(row=5, column=0, sticky=tk.EW, pady=(0, 8))
         self.trans_frame.columnconfigure(1, weight=1)
         self.trans_frame.columnconfigure(4, weight=1)
 
@@ -155,19 +206,25 @@ class SubGenGUI:
 
         # ── Progress & Log ──
         self.progress = ttk.Progressbar(main, mode="indeterminate")
-        self.progress.grid(row=5, column=0, sticky=tk.EW, pady=(0, 6))
+        self.progress.grid(row=6, column=0, sticky=tk.EW, pady=(0, 6))
 
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(main, textvariable=self.status_var).grid(row=6, column=0, sticky=tk.W, pady=(0, 4))
-        main.rowconfigure(7, weight=1)
+        self.status_label = ttk.Label(main, textvariable=self.status_var, style="Status.TLabel")
+        self.status_label.grid(row=7, column=0, sticky=tk.W, pady=(0, 4))
+        main.rowconfigure(8, weight=1)
 
         log_frame = ttk.LabelFrame(main, text="Output Log", padding=4)
-        log_frame.grid(row=7, column=0, sticky=tk.NSEW, pady=(0, 8))
+        log_frame.grid(row=8, column=0, sticky=tk.NSEW, pady=(0, 8))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
         self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD, state=tk.DISABLED,
-                                bg="#1e1e1e", fg="#d4d4d4", font=("Consolas", 9), relief=tk.FLAT)
+                                bg=self.bg_color, fg=self.fg_color,
+                                font=("Consolas", 9), relief=tk.FLAT,
+                                borderwidth=0, highlightthickness=0,
+                                insertbackground=self.fg_color,
+                                selectbackground=self.sel_color,
+                                selectforeground="#ffffff")
         scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         self.log_text.grid(row=0, column=0, sticky=tk.NSEW)
@@ -175,10 +232,11 @@ class SubGenGUI:
 
         # ── Buttons ──
         btn_row = ttk.Frame(main)
-        btn_row.grid(row=8, column=0, sticky=tk.EW)
-        self.run_btn = ttk.Button(btn_row, text="Generate Subtitles", command=self.run, width=24)
-        self.run_btn.pack(side=tk.LEFT, padx=(0, 6))
+        btn_row.grid(row=9, column=0, sticky=tk.EW)
         ttk.Button(btn_row, text="Clear Log", command=self.clear_log).pack(side=tk.LEFT)
+        self.run_btn = ttk.Button(btn_row, text="Generate Subtitles", command=self.run,
+                                  style="Accent.TButton", width=24)
+        self.run_btn.pack(side=tk.RIGHT)
 
         self.root.after(100, self._poll_log)
 
@@ -240,6 +298,13 @@ class SubGenGUI:
 
     def set_status(self, msg):
         self.status_var.set(msg)
+        if "Done" in msg:
+            style = "Success.TLabel"
+        elif "Failed" in msg or "Error" in msg:
+            style = "Error.TLabel"
+        else:
+            style = "Status.TLabel"
+        self.status_label.configure(style=style)
         self.root.update_idletasks()
 
     # ── run pipeline ──
@@ -249,7 +314,7 @@ class SubGenGUI:
         model = self.model_var.get()
         if model != "base":
             args += ["--whisper-model", model]
-        lang = self.lang_var.get().strip()
+        lang = language_code(self.lang_var.get())
         if lang:
             args += ["--language", lang]
         out = self.output_var.get().strip()

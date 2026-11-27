@@ -260,7 +260,7 @@ python subgen.py clip.mp4 --chars-per-line 32 --max-lines 2 --max-duration 4 --m
 python gui.py
 ```
 
-Select a video, adjust the Whisper and timing settings, optionally enable translation (including Ollama server URL, batch size, timeout, and retries), and click **Generate Subtitles**. The pipeline output is streamed to the log panel.
+Select an audio or video file, adjust the Whisper and timing settings (the **Audio Language** menu lists full language names), optionally enable translation (including Ollama server URL, batch size, timeout, and retries), and click **Generate Subtitles**. The pipeline output is streamed to the log panel. The interface uses a consistent rounded theme on Windows, macOS, and Linux.
 
 ### Standalone translation
 
