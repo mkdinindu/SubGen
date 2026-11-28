@@ -12,6 +12,13 @@ from tkinter import ttk, filedialog, messagebox
 
 import sv_ttk
 
+from ollama_client import (
+    DEFAULT_OLLAMA_URL,
+    OllamaError,
+    list_models,
+    normalize_base_url,
+)
+
 
 # Display name -> Whisper language code. The GUI shows full names while the CLI
 # still receives the short codes Whisper expects.
@@ -162,7 +169,11 @@ class SubGenGUI:
         self.tgt_lang_var = tk.StringVar(value="Spanish")
         self.tgt_code_var = tk.StringVar(value="es")
         self.ollama_var = tk.StringVar(value="gemma")
-        self.ollama_url_var = tk.StringVar(value="")
+        try:
+            default_url = normalize_base_url()
+        except OllamaError:
+            default_url = DEFAULT_OLLAMA_URL
+        self.ollama_url_var = tk.StringVar(value=default_url)
         self.batch_size_var = tk.StringVar(value="20")
         self.timeout_var = tk.StringVar(value="300")
         self.retries_var = tk.StringVar(value="3")
@@ -184,8 +195,11 @@ class SubGenGUI:
                                      lambda *a: self.tgt_code_label.configure(text=f"({self.tgt_code_var.get()})"))
 
         ttk.Label(self.trans_frame, text="Ollama Model:").grid(row=1, column=3, sticky=tk.W, padx=(12, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.ollama_var, width=12).grid(
-            row=1, column=4, sticky=tk.W, pady=(6, 0))
+        self.model_cb = ttk.Combobox(self.trans_frame, textvariable=self.ollama_var,
+                                     values=[self.ollama_var.get()], width=16)
+        self.model_cb.grid(row=1, column=4, sticky=tk.EW, pady=(6, 0))
+        ttk.Button(self.trans_frame, text="Refresh", command=self.refresh_models,
+                   width=9).grid(row=1, column=5, sticky=tk.W, padx=(6, 0), pady=(6, 0))
 
         ttk.Label(self.trans_frame, text="Timeout (s):").grid(row=2, column=3, sticky=tk.W, padx=(12, 4), pady=(6, 0))
         ttk.Entry(self.trans_frame, textvariable=self.timeout_var, width=8).grid(
@@ -199,8 +213,9 @@ class SubGenGUI:
             row=3, column=3, sticky=tk.W, pady=(6, 0))
 
         ttk.Label(self.trans_frame, text="Server URL:").grid(row=4, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.ollama_url_var).grid(
-            row=4, column=1, columnspan=5, sticky=tk.EW, pady=(6, 0))
+        url_entry = ttk.Entry(self.trans_frame, textvariable=self.ollama_url_var)
+        url_entry.grid(row=4, column=1, columnspan=5, sticky=tk.EW, pady=(6, 0))
+        url_entry.bind("<FocusOut>", self._refresh_on_url_change)
 
         self.toggle_translate()
 
@@ -251,6 +266,8 @@ class SubGenGUI:
                     self.log(value)
                 elif kind == "status":
                     self.set_status(value)
+                elif kind == "models":
+                    self._apply_models(value)
                 elif kind == "finish":
                     self.finish()
         except queue.Empty:
@@ -283,6 +300,39 @@ class SubGenGUI:
                 child.configure(state=state)
             except tk.TclError:
                 pass
+        if self.translate_var.get():
+            self.refresh_models()
+
+    def refresh_models(self):
+        """Load installed model tags from the server named in Server URL."""
+        url = self.ollama_url_var.get().strip()
+        threading.Thread(target=self._fetch_models, args=(url,), daemon=True).start()
+
+    def _refresh_on_url_change(self, event=None):
+        if self.translate_var.get():
+            self.refresh_models()
+
+    def _fetch_models(self, url):
+        try:
+            models = list_models(url, timeout=5.0)
+        except OllamaError as exc:
+            self.log_queue.put(("log", f"Could not list Ollama models: {exc}"))
+            self.log_queue.put(("log", "You can still type a model tag manually."))
+        else:
+            self.log_queue.put(("models", models))
+
+    def _apply_models(self, models):
+        current = self.ollama_var.get().strip()
+        self.model_cb.configure(values=models)
+        server = self.ollama_url_var.get().strip() or "default server"
+        if not models:
+            self.log(f"No installed models found at {server}. "
+                     "Pull one with: ollama pull <name>")
+            return
+        self.log(f"Ollama models at {server}: {', '.join(models)}")
+        if current not in models:
+            self.log(f"Model '{current}' is not installed there; select an "
+                     "installed model or type a tag manually.")
 
     def clear_log(self):
         self.log_text.configure(state=tk.NORMAL)

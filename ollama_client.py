@@ -42,6 +42,29 @@ def normalize_base_url(base_url=None):
     return raw.rstrip("/")
 
 
+def list_models(base_url=None, timeout=10.0):
+    """Return the sorted model tags installed on the Ollama server."""
+    url = normalize_base_url(base_url) + "/api/tags"
+    request = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        retryable = exc.code == 429 or 500 <= exc.code < 600
+        raise OllamaError(
+            f"Ollama HTTP {exc.code} while listing models", retryable
+        ) from exc
+    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
+        raise OllamaError(f"Cannot reach Ollama at {url}: {exc}", True) from exc
+
+    try:
+        data = json.loads(body)
+        names = [item["name"] for item in data.get("models", []) if item.get("name")]
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
+        raise OllamaError("Ollama returned an unexpected model list", True) from exc
+    return sorted(set(names))
+
+
 def build_system_prompt(source_lang, source_code, target_lang, target_code):
     """Build the one system prompt shared by every batch of cues."""
     return (

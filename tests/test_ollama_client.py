@@ -23,6 +23,46 @@ class NormalizeBaseUrlTests(unittest.TestCase):
             client.normalize_base_url("ftp://example.com")
 
 
+class FakeResponse:
+    def __init__(self, body):
+        self.body = body.encode("utf-8") if isinstance(body, str) else body
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class ListModelsTests(unittest.TestCase):
+    def test_returns_sorted_unique_names_from_tags_endpoint(self):
+        body = json.dumps({"models": [
+            {"name": "gemma:2b"}, {"name": "llama3.2"}, {"name": "gemma:2b"},
+        ]})
+        with mock.patch.object(client.urllib.request, "urlopen",
+                               return_value=FakeResponse(body)) as urlopen:
+            result = client.list_models("http://host:1/")
+        self.assertEqual(result, ["gemma:2b", "llama3.2"])
+        self.assertEqual(urlopen.call_args.args[0].full_url,
+                         "http://host:1/api/tags")
+
+    def test_invalid_json_raises_ollama_error(self):
+        with mock.patch.object(client.urllib.request, "urlopen",
+                               return_value=FakeResponse("not json")):
+            with self.assertRaises(client.OllamaError):
+                client.list_models()
+
+    def test_connection_error_is_retryable(self):
+        error = client.urllib.error.URLError("refused")
+        with mock.patch.object(client.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(client.OllamaError) as caught:
+                client.list_models()
+        self.assertTrue(caught.exception.retryable)
+
+
 class PromptTests(unittest.TestCase):
     def test_user_prompt_contains_count_and_ids(self):
         payload = json.loads(client.build_user_prompt(["one", "two"]))
