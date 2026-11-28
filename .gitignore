@@ -13,3 +13,8 @@ dist/
 # Editor files
 .idea/
 .vscode/
+
+# Local example/generated files kept in the working tree only
+subgen_colab.ipynb
+rus.srt
+SubGEn.zip
