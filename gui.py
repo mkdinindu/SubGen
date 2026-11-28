@@ -57,8 +57,8 @@ class SubGenGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("SubGen — Subtitle Generator")
-        self.root.geometry("760x720")
-        self.root.minsize(620, 560)
+        self.root.geometry("780x840")
+        self.root.minsize(640, 760)
         self.root.resizable(True, True)
         self._configure_styles()
         self.proc = None
@@ -274,7 +274,7 @@ class SubGenGUI:
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
-        self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD, state=tk.DISABLED,
+        self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD, state=tk.DISABLED,
                                 bg=self.bg_color, fg=self.fg_color,
                                 font=("Consolas", 9), relief=tk.FLAT,
                                 borderwidth=0, highlightthickness=0,
@@ -362,7 +362,7 @@ class SubGenGUI:
             self.translate_check.grid(row=0, column=0, columnspan=6, sticky=tk.W)
         self.toggle_translate()
 
-   def toggle_translate(self):
+    def toggle_translate(self):
         if not self.trans_frame:
             return
         # SRT mode always translates; the checkbox is only shown in video mode.
@@ -386,7 +386,7 @@ class SubGenGUI:
         threading.Thread(target=self._fetch_models, args=(url,), daemon=True).start()
 
     def _refresh_on_url_change(self, event=None):
-        if self.translate_var.get():
+        if self.translate_var.get() or self.is_srt_mode():
             self.refresh_models()
 
     def _fetch_models(self, url):
