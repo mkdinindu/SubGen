@@ -9,6 +9,8 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+from translate_srt import default_output_path
+
 
 LANGUAGES = [
     "", "en", "es", "fr", "de", "it", "pt", "nl", "ru", "ja",
@@ -35,17 +37,28 @@ class SubGenGUI:
         main = ttk.Frame(self.root, padding=12)
         main.pack(fill=tk.BOTH, expand=True)
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(6, weight=1)
 
-        # ── Video file ──
-        ttk.Label(main, text="Video File:", font=("", 10, "bold")).grid(
-            row=0, column=0, sticky=tk.W, pady=(0, 2))
+        # ── Mode ──
+        self.mode_var = tk.StringVar(value="video")
+        mode_frame = ttk.Frame(main)
+        mode_frame.grid(row=0, column=0, sticky=tk.W, pady=(0, 8))
+        ttk.Label(mode_frame, text="Mode:", font=("", 10, "bold")).pack(side=tk.LEFT)
+        ttk.Radiobutton(mode_frame, text="Video → SRT (Whisper)",
+                        variable=self.mode_var, value="video",
+                        command=self.toggle_mode).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Radiobutton(mode_frame, text="Existing SRT → translated SRT",
+                        variable=self.mode_var, value="srt",
+                        command=self.toggle_mode).pack(side=tk.LEFT, padx=(8, 0))
+
+        # ── Input file ──
+        self.input_label = ttk.Label(main, text="Video File:", font=("", 10, "bold"))
+        self.input_label.grid(row=1, column=0, sticky=tk.W, pady=(0, 2))
         row1 = ttk.Frame(main)
-        row1.grid(row=1, column=0, sticky=tk.EW, pady=(0, 8))
+        row1.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
         row1.columnconfigure(0, weight=1)
-        self.video_path = tk.StringVar()
-        ttk.Entry(row1, textvariable=self.video_path).grid(row=0, column=0, sticky=tk.EW)
-        ttk.Button(row1, text="Browse", command=self.browse_video).grid(row=0, column=1, padx=(6, 0))
+        self.input_path = tk.StringVar()
+        ttk.Entry(row1, textvariable=self.input_path).grid(row=0, column=0, sticky=tk.EW)
+        ttk.Button(row1, text="Browse", command=self.browse_input).grid(row=0, column=1, padx=(6, 0))
 
         # ── Whisper settings ──
         self.model_var = tk.StringVar(value="base")
@@ -53,7 +66,8 @@ class SubGenGUI:
         self.output_var = tk.StringVar(value="")
 
         opts_frame = ttk.LabelFrame(main, text="Whisper Settings", padding=8)
-        opts_frame.grid(row=2, column=0, sticky=tk.EW, pady=(0, 8))
+        self.whisper_frame = opts_frame
+        opts_frame.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
         opts_frame.columnconfigure(1, weight=1)
 
         ttk.Label(opts_frame, text="Model:").grid(row=0, column=0, sticky=tk.W, padx=(0, 6))
@@ -72,7 +86,8 @@ class SubGenGUI:
 
         # ── Timing ──
         timing_frame = ttk.LabelFrame(main, text="Timing", padding=8)
-        timing_frame.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
+        self.timing_frame = timing_frame
+        timing_frame.grid(row=4, column=0, sticky=tk.EW, pady=(0, 8))
 
         self.delay_var = tk.StringVar(value="0.0")
         self.min_dur_var = tk.StringVar(value="1.0")
@@ -97,13 +112,15 @@ class SubGenGUI:
         # ── Translation ──
         self.translate_var = tk.BooleanVar(value=False)
         self.trans_frame = ttk.LabelFrame(main, text="Translation (Ollama)", padding=8)
-        self.trans_frame.grid(row=4, column=0, sticky=tk.EW, pady=(0, 8))
+        self.trans_frame.grid(row=5, column=0, sticky=tk.EW, pady=(0, 8))
         self.trans_frame.columnconfigure(1, weight=1)
         self.trans_frame.columnconfigure(4, weight=1)
 
-        ttk.Checkbutton(self.trans_frame, text="Enable Translation",
-                        variable=self.translate_var,
-                        command=self.toggle_translate).grid(row=0, column=0, columnspan=6, sticky=tk.W)
+        self.translate_check = ttk.Checkbutton(
+            self.trans_frame, text="Enable Translation",
+            variable=self.translate_var, command=self.toggle_translate
+        )
+        self.translate_check.grid(row=0, column=0, columnspan=6, sticky=tk.W)
 
         self.src_lang_var = tk.StringVar(value="English")
         self.src_code_var = tk.StringVar(value="en")
@@ -154,14 +171,14 @@ class SubGenGUI:
 
         # ── Progress & Log ──
         self.progress = ttk.Progressbar(main, mode="indeterminate")
-        self.progress.grid(row=5, column=0, sticky=tk.EW, pady=(0, 6))
+        self.progress.grid(row=6, column=0, sticky=tk.EW, pady=(0, 6))
 
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(main, textvariable=self.status_var).grid(row=6, column=0, sticky=tk.W, pady=(0, 4))
-        main.rowconfigure(7, weight=1)
+        ttk.Label(main, textvariable=self.status_var).grid(row=7, column=0, sticky=tk.W, pady=(0, 4))
+        main.rowconfigure(8, weight=1)
 
         log_frame = ttk.LabelFrame(main, text="Output Log", padding=4)
-        log_frame.grid(row=7, column=0, sticky=tk.NSEW, pady=(0, 8))
+        log_frame.grid(row=8, column=0, sticky=tk.NSEW, pady=(0, 8))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
@@ -174,25 +191,59 @@ class SubGenGUI:
 
         # ── Buttons ──
         btn_row = ttk.Frame(main)
-        btn_row.grid(row=8, column=0, sticky=tk.EW)
+        btn_row.grid(row=9, column=0, sticky=tk.EW)
         self.run_btn = ttk.Button(btn_row, text="Generate Subtitles", command=self.run, width=24)
         self.run_btn.pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(btn_row, text="Clear Log", command=self.clear_log).pack(side=tk.LEFT)
 
+        self.toggle_mode()
+
     # ── helpers ──
 
-    def browse_video(self):
-        path = filedialog.askopenfilename(
-            title="Select Video File",
-            filetypes=[("Video files", "*.mp4 *.mkv *.avi *.mov *.webm *.m4v"), ("All files", "*.*")]
-        )
+    def is_srt_mode(self):
+        return self.mode_var.get() == "srt"
+
+    def browse_input(self):
+        if self.is_srt_mode():
+            path = filedialog.askopenfilename(
+                title="Select SRT File",
+                filetypes=[("SubRip subtitles", "*.srt"), ("All files", "*.*")]
+            )
+        else:
+            path = filedialog.askopenfilename(
+                title="Select Video File",
+                filetypes=[("Video files", "*.mp4 *.mkv *.avi *.mov *.webm *.m4v"), ("All files", "*.*")]
+            )
         if path:
-            self.video_path.set(path)
-            if not self.output_var.get():
+            self.input_path.set(path)
+            if self.is_srt_mode():
+                self.output_var.set(default_output_path(path, self.tgt_code_var.get()))
+            else:
                 self.output_var.set(os.path.splitext(path)[0] + ".srt")
 
+    def toggle_mode(self):
+        srt_mode = self.is_srt_mode()
+        self.input_label.configure(text="SRT File:" if srt_mode else "Video File:")
+        self.run_btn.configure(text="Translate SRT" if srt_mode else "Generate Subtitles")
+
+        if srt_mode:
+            self.whisper_frame.grid_remove()
+            self.timing_frame.grid_remove()
+            self.translate_check.grid_remove()
+            if self.input_path.get().lower().endswith(".srt"):
+                self.output_var.set(
+                    default_output_path(self.input_path.get(), self.tgt_code_var.get())
+                )
+        else:
+            self.whisper_frame.grid(row=3, column=0, sticky=tk.EW, pady=(0, 8))
+            self.timing_frame.grid(row=4, column=0, sticky=tk.EW, pady=(0, 8))
+            self.translate_check.grid(row=0, column=0, columnspan=6, sticky=tk.W)
+        self.toggle_translate()
+
     def toggle_translate(self):
-        state = tk.NORMAL if self.translate_var.get() else tk.DISABLED
+        # SRT mode always translates, so the checkbox is hidden there.
+        enabled = self.translate_var.get() or self.is_srt_mode()
+        state = tk.NORMAL if enabled else tk.DISABLED
         if not self.trans_frame:
             return
         for child in self.trans_frame.winfo_children():
@@ -221,7 +272,33 @@ class SubGenGUI:
 
     # ── run pipeline ──
 
-    def build_args(self, video):
+    def build_args(self, input_path):
+        if self.is_srt_mode():
+            return self.build_srt_args(input_path)
+        return self.build_video_args(input_path)
+
+    def build_translation_args(self):
+        args = ["--source-lang", self.src_lang_var.get().strip()]
+        args += ["--source-code", self.src_code_var.get().strip()]
+        args += ["--target-lang", self.tgt_lang_var.get().strip()]
+        args += ["--target-code", self.tgt_code_var.get().strip()]
+        args += ["--ollama-model", self.ollama_var.get().strip()]
+        url = self.ollama_url_var.get().strip()
+        if url:
+            args += ["--ollama-url", url]
+        args += ["--batch-size", self.batch_size_var.get().strip() or "20"]
+        args += ["--ollama-timeout", self.timeout_var.get().strip() or "300"]
+        args += ["--ollama-retries", self.retries_var.get().strip() or "3"]
+        return args
+
+    def build_srt_args(self, input_path):
+        args = [input_path]
+        out = self.output_var.get().strip()
+        if out:
+            args += ["-o", out]
+        return args + self.build_translation_args()
+
+    def build_video_args(self, video):
         args = [video]
         model = self.model_var.get()
         if model != "base":
@@ -243,22 +320,12 @@ class SubGenGUI:
 
         if self.translate_var.get():
             args += ["--translate"]
-            args += ["--source-lang", self.src_lang_var.get().strip()]
-            args += ["--source-code", self.src_code_var.get().strip()]
-            args += ["--target-lang", self.tgt_lang_var.get().strip()]
-            args += ["--target-code", self.tgt_code_var.get().strip()]
-            args += ["--ollama-model", self.ollama_var.get().strip()]
-            url = self.ollama_url_var.get().strip()
-            if url:
-                args += ["--ollama-url", url]
-            args += ["--batch-size", self.batch_size_var.get().strip() or "20"]
-            args += ["--ollama-timeout", self.timeout_var.get().strip() or "300"]
-            args += ["--ollama-retries", self.retries_var.get().strip() or "3"]
+            args += self.build_translation_args()
 
         return args
 
-    def run_thread(self, args):
-        script = os.path.join(resource_path(), "subgen.py")
+    def run_thread(self, script, args):
+        script = os.path.join(resource_path(), script)
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
 
@@ -293,12 +360,13 @@ class SubGenGUI:
             self.root.after(0, self.finish)
 
     def run(self):
-        video = self.video_path.get().strip()
-        if not video:
-            messagebox.showwarning("No Video", "Please select a video file.")
+        input_path = self.input_path.get().strip()
+        if not input_path:
+            kind = "SRT file" if self.is_srt_mode() else "video file"
+            messagebox.showwarning("No Input", f"Please select a {kind}.")
             return
-        if not os.path.isfile(video):
-            messagebox.showerror("Error", f"File not found:\n{video}")
+        if not os.path.isfile(input_path):
+            messagebox.showerror("Error", f"File not found:\n{input_path}")
             return
 
         self.run_btn.configure(state=tk.DISABLED)
@@ -306,11 +374,12 @@ class SubGenGUI:
         self.clear_log()
         self.set_status("Running...")
 
-        args = self.build_args(video)
-        self.log(f"$ python subgen.py {' '.join(args)}")
+        script = "translate_srt.py" if self.is_srt_mode() else "subgen.py"
+        args = self.build_args(input_path)
+        self.log(f"$ python {script} {' '.join(args)}")
         self.log("")
 
-        t = threading.Thread(target=self.run_thread, args=(args,), daemon=True)
+        t = threading.Thread(target=self.run_thread, args=(script, args), daemon=True)
         t.start()
 
     def finish(self):
