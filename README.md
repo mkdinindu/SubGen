@@ -261,7 +261,7 @@ python subgen.py clip.mp4 --chars-per-line 32 --max-lines 2 --max-duration 4 --m
 python gui.py
 ```
 
-Select an audio or video file, adjust the Whisper and timing settings (the **Audio Language** menu lists full language names), optionally enable translation, and click **Generate Subtitles**. In the translation section, **Server URL** is prefilled with the effective default (`OLLAMA_HOST` if set, otherwise `http://127.0.0.1:11434`) and can be edited to point at another Ollama server. **Ollama Model** is the tag of a model already installed on *that* server: enabling translation or clicking **Refresh** lists the available models from `GET /api/tags`, and leaving the field editable lets you type a tag manually. The pipeline output is streamed to the log panel. The interface uses a consistent rounded theme on Windows, macOS, and Linux.
+Select an audio or video file, adjust the Whisper and timing settings (the **Audio Language** menu lists full language names), optionally enable translation, and click **Generate Subtitles**. In the translation section, **Source** and **Target** are dropdowns of full language names (their codes are filled in automatically). **Server URL** is prefilled with the effective default (`OLLAMA_HOST` if set, otherwise `http://127.0.0.1:11434`) and can be edited to point at another Ollama server. **Ollama Model** is the tag of a model already installed on *that* server: enabling translation or clicking **Refresh** lists the available models from `GET /api/tags`, and leaving the field editable lets you type a tag manually. The pipeline output is streamed to the log panel. The interface uses a consistent rounded theme on Windows, macOS, and Linux.
 
 ### Standalone translation
 

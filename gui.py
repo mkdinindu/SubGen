@@ -33,6 +33,7 @@ LANGUAGE_CODES = {
     "Thai": "th", "Vietnamese": "vi", "Indonesian": "id", "Malay": "ms",
 }
 LANGUAGES = list(LANGUAGE_CODES)
+TRANSLATION_LANGUAGES = [name for name in LANGUAGES if name != "Auto-detect"]
 
 
 def language_code(value):
@@ -179,20 +180,28 @@ class SubGenGUI:
         self.retries_var = tk.StringVar(value="3")
 
         ttk.Label(self.trans_frame, text="Source:").grid(row=1, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.src_lang_var, width=14).grid(
-            row=1, column=1, sticky=tk.W, pady=(6, 0))
+        ttk.Combobox(self.trans_frame, textvariable=self.src_lang_var,
+                     values=TRANSLATION_LANGUAGES, state="readonly", width=16).grid(
+            row=1, column=1, sticky=tk.EW, pady=(6, 0))
         self.src_code_label = ttk.Label(self.trans_frame, text=f"({self.src_code_var.get()})")
         self.src_code_label.grid(row=1, column=2, sticky=tk.W, padx=(2, 0), pady=(6, 0))
-        self.src_code_var.trace_add("write",
-                                     lambda *a: self.src_code_label.configure(text=f"({self.src_code_var.get()})"))
+        self.src_lang_var.trace_add(
+            "write",
+            lambda *a: self._sync_lang_code(self.src_lang_var, self.src_code_var,
+                                            self.src_code_label),
+        )
 
         ttk.Label(self.trans_frame, text="Target:").grid(row=2, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.tgt_lang_var, width=14).grid(
-            row=2, column=1, sticky=tk.W, pady=(6, 0))
+        ttk.Combobox(self.trans_frame, textvariable=self.tgt_lang_var,
+                     values=TRANSLATION_LANGUAGES, state="readonly", width=16).grid(
+            row=2, column=1, sticky=tk.EW, pady=(6, 0))
         self.tgt_code_label = ttk.Label(self.trans_frame, text=f"({self.tgt_code_var.get()})")
         self.tgt_code_label.grid(row=2, column=2, sticky=tk.W, padx=(2, 0), pady=(6, 0))
-        self.tgt_code_var.trace_add("write",
-                                     lambda *a: self.tgt_code_label.configure(text=f"({self.tgt_code_var.get()})"))
+        self.tgt_lang_var.trace_add(
+            "write",
+            lambda *a: self._sync_lang_code(self.tgt_lang_var, self.tgt_code_var,
+                                            self.tgt_code_label),
+        )
 
         ttk.Label(self.trans_frame, text="Ollama Model:").grid(row=1, column=3, sticky=tk.W, padx=(12, 4), pady=(6, 0))
         self.model_cb = ttk.Combobox(self.trans_frame, textvariable=self.ollama_var,
@@ -217,6 +226,11 @@ class SubGenGUI:
         url_entry.grid(row=4, column=1, columnspan=5, sticky=tk.EW, pady=(6, 0))
         url_entry.bind("<FocusOut>", self._refresh_on_url_change)
 
+        self.trans_widget_states = {
+            child: child.cget("state")
+            for child in self.trans_frame.winfo_children()
+            if not isinstance(child, ttk.Checkbutton)
+        }
         self.toggle_translate()
 
         # ── Progress & Log ──
@@ -290,18 +304,21 @@ class SubGenGUI:
                 self.output_var.set(os.path.splitext(path)[0] + ".srt")
 
     def toggle_translate(self):
-        state = tk.NORMAL if self.translate_var.get() else tk.DISABLED
         if not self.trans_frame:
             return
-        for child in self.trans_frame.winfo_children():
-            if isinstance(child, ttk.Checkbutton):
-                continue
+        enabled = self.translate_var.get()
+        for child, normal_state in self.trans_widget_states.items():
             try:
-                child.configure(state=state)
+                child.configure(state=normal_state if enabled else tk.DISABLED)
             except tk.TclError:
                 pass
-        if self.translate_var.get():
+        if enabled:
             self.refresh_models()
+
+    def _sync_lang_code(self, name_var, code_var, label):
+        code = language_code(name_var.get())
+        code_var.set(code)
+        label.configure(text=f"({code})")
 
     def refresh_models(self):
         """Load installed model tags from the server named in Server URL."""
