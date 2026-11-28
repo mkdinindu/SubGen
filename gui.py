@@ -17,6 +17,13 @@ try:
 except ImportError:  # GUI still works with the stock ttk theme
     sv_ttk = None
 
+from ollama_client import (
+    DEFAULT_OLLAMA_URL,
+    OllamaError,
+    list_models,
+    normalize_base_url,
+)
+
 
 # Display name -> Whisper language code. The GUI shows full names while the CLI
 # still receives the short codes Whisper expects.
@@ -31,6 +38,7 @@ LANGUAGE_CODES = {
     "Thai": "th", "Vietnamese": "vi", "Indonesian": "id", "Malay": "ms",
 }
 LANGUAGES = list(LANGUAGE_CODES)
+TRANSLATION_LANGUAGES = [name for name in LANGUAGES if name != "Auto-detect"]
 
 
 def language_code(value):
@@ -49,8 +57,8 @@ class SubGenGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("SubGen — Subtitle Generator")
-        self.root.geometry("760x720")
-        self.root.minsize(620, 560)
+        self.root.geometry("780x840")
+        self.root.minsize(640, 760)
         self.root.resizable(True, True)
         self._configure_styles()
         self.proc = None
@@ -189,30 +197,45 @@ class SubGenGUI:
         self.tgt_lang_var = tk.StringVar(value="Spanish")
         self.tgt_code_var = tk.StringVar(value="es")
         self.ollama_var = tk.StringVar(value="gemma")
-        self.ollama_url_var = tk.StringVar(value="")
+        try:
+            default_url = normalize_base_url()
+        except OllamaError:
+            default_url = DEFAULT_OLLAMA_URL
+        self.ollama_url_var = tk.StringVar(value=default_url)
         self.batch_size_var = tk.StringVar(value="20")
         self.timeout_var = tk.StringVar(value="300")
         self.retries_var = tk.StringVar(value="3")
 
         ttk.Label(self.trans_frame, text="Source:").grid(row=1, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.src_lang_var, width=14).grid(
-            row=1, column=1, sticky=tk.W, pady=(6, 0))
+        ttk.Combobox(self.trans_frame, textvariable=self.src_lang_var,
+                     values=TRANSLATION_LANGUAGES, state="readonly", width=16).grid(
+            row=1, column=1, sticky=tk.EW, pady=(6, 0))
         self.src_code_label = ttk.Label(self.trans_frame, text=f"({self.src_code_var.get()})")
         self.src_code_label.grid(row=1, column=2, sticky=tk.W, padx=(2, 0), pady=(6, 0))
-        self.src_code_var.trace_add("write",
-                                     lambda *a: self.src_code_label.configure(text=f"({self.src_code_var.get()})"))
+        self.src_lang_var.trace_add(
+            "write",
+            lambda *a: self._sync_lang_code(self.src_lang_var, self.src_code_var,
+                                            self.src_code_label),
+        )
 
         ttk.Label(self.trans_frame, text="Target:").grid(row=2, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.tgt_lang_var, width=14).grid(
-            row=2, column=1, sticky=tk.W, pady=(6, 0))
+        ttk.Combobox(self.trans_frame, textvariable=self.tgt_lang_var,
+                     values=TRANSLATION_LANGUAGES, state="readonly", width=16).grid(
+            row=2, column=1, sticky=tk.EW, pady=(6, 0))
         self.tgt_code_label = ttk.Label(self.trans_frame, text=f"({self.tgt_code_var.get()})")
         self.tgt_code_label.grid(row=2, column=2, sticky=tk.W, padx=(2, 0), pady=(6, 0))
-        self.tgt_code_var.trace_add("write",
-                                     lambda *a: self.tgt_code_label.configure(text=f"({self.tgt_code_var.get()})"))
+        self.tgt_lang_var.trace_add(
+            "write",
+            lambda *a: self._sync_lang_code(self.tgt_lang_var, self.tgt_code_var,
+                                            self.tgt_code_label),
+        )
 
         ttk.Label(self.trans_frame, text="Ollama Model:").grid(row=1, column=3, sticky=tk.W, padx=(12, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.ollama_var, width=12).grid(
-            row=1, column=4, sticky=tk.W, pady=(6, 0))
+        self.model_cb = ttk.Combobox(self.trans_frame, textvariable=self.ollama_var,
+                                     values=[self.ollama_var.get()], width=16)
+        self.model_cb.grid(row=1, column=4, sticky=tk.EW, pady=(6, 0))
+        ttk.Button(self.trans_frame, text="Refresh", command=self.refresh_models,
+                   width=9).grid(row=1, column=5, sticky=tk.W, padx=(6, 0), pady=(6, 0))
 
         ttk.Label(self.trans_frame, text="Timeout (s):").grid(row=2, column=3, sticky=tk.W, padx=(12, 4), pady=(6, 0))
         ttk.Entry(self.trans_frame, textvariable=self.timeout_var, width=8).grid(
@@ -226,9 +249,15 @@ class SubGenGUI:
             row=3, column=3, sticky=tk.W, pady=(6, 0))
 
         ttk.Label(self.trans_frame, text="Server URL:").grid(row=4, column=0, sticky=tk.W, padx=(0, 4), pady=(6, 0))
-        ttk.Entry(self.trans_frame, textvariable=self.ollama_url_var).grid(
-            row=4, column=1, columnspan=5, sticky=tk.EW, pady=(6, 0))
+        url_entry = ttk.Entry(self.trans_frame, textvariable=self.ollama_url_var)
+        url_entry.grid(row=4, column=1, columnspan=5, sticky=tk.EW, pady=(6, 0))
+        url_entry.bind("<FocusOut>", self._refresh_on_url_change)
 
+        self.trans_widget_states = {
+            child: child.cget("state")
+            for child in self.trans_frame.winfo_children()
+            if not isinstance(child, ttk.Checkbutton)
+        }
         self.toggle_translate()
 
         # ── Progress & Log ──
@@ -245,7 +274,7 @@ class SubGenGUI:
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
-        self.log_text = tk.Text(log_frame, height=10, wrap=tk.WORD, state=tk.DISABLED,
+        self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD, state=tk.DISABLED,
                                 bg=self.bg_color, fg=self.fg_color,
                                 font=("Consolas", 9), relief=tk.FLAT,
                                 borderwidth=0, highlightthickness=0,
@@ -280,6 +309,8 @@ class SubGenGUI:
                     self.log(value)
                 elif kind == "status":
                     self.set_status(value)
+                elif kind == "models":
+                    self._apply_models(value)
                 elif kind == "finish":
                     self.finish()
         except queue.Empty:
@@ -332,18 +363,53 @@ class SubGenGUI:
         self.toggle_translate()
 
     def toggle_translate(self):
-        # SRT mode always translates, so the checkbox is hidden there.
-        enabled = self.translate_var.get() or self.is_srt_mode()
-        state = tk.NORMAL if enabled else tk.DISABLED
         if not self.trans_frame:
             return
-        for child in self.trans_frame.winfo_children():
-            if isinstance(child, ttk.Checkbutton):
-                continue
+        # SRT mode always translates; the checkbox is only shown in video mode.
+        enabled = self.translate_var.get() or self.is_srt_mode()
+        for child, normal_state in self.trans_widget_states.items():
             try:
-                child.configure(state=state)
+                child.configure(state=normal_state if enabled else tk.DISABLED)
             except tk.TclError:
                 pass
+        if enabled:
+            self.refresh_models()
+            
+    def _sync_lang_code(self, name_var, code_var, label):
+        code = language_code(name_var.get())
+        code_var.set(code)
+        label.configure(text=f"({code})")
+
+    def refresh_models(self):
+        """Load installed model tags from the server named in Server URL."""
+        url = self.ollama_url_var.get().strip()
+        threading.Thread(target=self._fetch_models, args=(url,), daemon=True).start()
+
+    def _refresh_on_url_change(self, event=None):
+        if self.translate_var.get() or self.is_srt_mode():
+            self.refresh_models()
+
+    def _fetch_models(self, url):
+        try:
+            models = list_models(url, timeout=5.0)
+        except OllamaError as exc:
+            self.log_queue.put(("log", f"Could not list Ollama models: {exc}"))
+            self.log_queue.put(("log", "You can still type a model tag manually."))
+        else:
+            self.log_queue.put(("models", models))
+
+    def _apply_models(self, models):
+        current = self.ollama_var.get().strip()
+        self.model_cb.configure(values=models)
+        server = self.ollama_url_var.get().strip() or "default server"
+        if not models:
+            self.log(f"No installed models found at {server}. "
+                     "Pull one with: ollama pull <name>")
+            return
+        self.log(f"Ollama models at {server}: {', '.join(models)}")
+        if current not in models:
+            self.log(f"Model '{current}' is not installed there; select an "
+                     "installed model or type a tag manually.")
 
     def clear_log(self):
         self.log_text.configure(state=tk.NORMAL)
