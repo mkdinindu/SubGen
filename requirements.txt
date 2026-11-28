@@ -1,0 +1,8 @@
+# Speech-to-text (pulls in PyTorch as a dependency)
+openai-whisper
+
+# Progress bars used by the CLI
+tqdm
+
+# Modern rounded GUI theme (Windows/macOS/Linux)
+sv-ttk
